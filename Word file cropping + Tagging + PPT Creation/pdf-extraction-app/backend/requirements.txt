@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pymupdf>=1.24.3
+pydrive2
+google-genai
+pillow
+pandas
+openpyxl
+python-multipart
+python-dotenv
+python-pptx
+python-docx
+reportlab
+requests

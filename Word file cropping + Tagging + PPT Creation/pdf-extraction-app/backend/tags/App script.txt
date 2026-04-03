@@ -1,0 +1,744 @@
+/***** FLEX NEET TAGGING – Questions.pdf → <Subject>_Tagging
+ *
+ * Subjects: physics, chemistry, botany, zoology, biology, maths
+ *   - biology uses BOTH Botany Tag + Zoology Tag taglists (merged)
+ *
+ * Control tab: "Lets Tag"
+ *   A: Source File        (Drive link to PDF)
+ *   B: Destination Folder (Drive folder link)
+ *   C: Subject            (physics | chemistry | botany | zoology | biology | maths)
+ *   D: Category           (optional; any text like ROI, KPM, etc.) ✅ used ONLY in output FILE NAME
+ *   E: Chapters           (optional; comma-separated Chapter_name values)
+ *   F: Tagging Status     ("Done" OR "Error: ...")
+ *   G: Output File link   (URL of created tagging sheet)
+ *
+ * Output file naming:
+ *   - No Category:           Botany_Tagging_<timestamp>
+ *   - With Category = ROI:   Botany_ROI__Tagging_<timestamp>
+ *
+ * Tag tabs:
+ *   - "Physics Tag"
+ *   - "Chemistry Tag"
+ *   - "Botany Tag"
+ *   - "Zoology Tag"
+ *   - "Maths Tag"
+ *
+ * API:
+ *   Vertex AI "express mode" endpoint:
+ *     https://aiplatform.googleapis.com/v1/publishers/google/models/<model>:generateContent
+ *
+ *   IMPORTANT CHANGE:
+ *     API key is sent via HEADER:  X-Goog-Api-Key: <KEY>
+ *     (NOT via ?key= in the URL)
+ *
+ * Keys:
+ *   Recommended: store in Script Properties
+ *     GEMINI_API_KEYS = key1,key2,key3
+ *******************************************************************/
+
+
+/***** CONFIG *****/
+const SHEET_PROMPT   = 'prompt';
+const SHEET_LETS_TAG = 'Lets Tag';
+
+// Vertex AI express-mode endpoint base
+const BULK_VERTEX_BASE = 'https://aiplatform.googleapis.com/v1/publishers/google/models';
+
+// Model id (no "models/" prefix here)
+const BULK_MODEL_ID = 'gemini-2.5-pro';
+
+// Subject tabs (biology does NOT have its own tab; it uses botany + zoology)
+const BULK_SUBJECT_TAB_NAMES = {
+  physics:    'Physics Tag',
+  chemistry:  'Chemistry Tag',
+  botany:     'Botany Tag',
+  zoology:    'Zoology Tag',
+  maths:      'Maths Tag',
+};
+
+// Canonical subjects
+const BULK_SUBJECT_KEYS = ['physics','chemistry','botany','zoology','biology','maths'];
+
+// TagList schema expected in subject tabs
+const BULK_TAG_HEADERS_LONG = [
+  'RowID','Subject','Subject_name','Chapter','Chapter_name',
+  'Topic','Topic_name','Subtopic','Subtopic_name'
+];
+
+// Gemini config
+const BULK_TEMP                  = 0.1;
+const BULK_MAX_OUTPUT_TOKENS     = 65536;
+const BULK_THINKING_BUDGET       = 1024;
+const BULK_THINKING_BUDGET_RETRY = 128;
+
+// Retry / backoff
+const BULK_MAX_RETRIES_KEY = 3;
+const BULK_BACKOFF_MS      = [1500, 4000, 8000];
+const BULK_429_BACKOFF_MS  = 10000;
+
+// 🔑 API KEYS
+// Recommended: Script Properties "GEMINI_API_KEYS" as comma-separated keys.
+// Fallback: put key(s) here (NOT recommended).
+const BULK_API_KEYS_FALLBACK = [
+  'API Key to be inserted',
+];
+
+// Optional cool-down between rows (ms)
+const BULK_COOLDOWN_BETWEEN_ROWS_MS = 5000;
+
+
+/***** MENU *****/
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Tagging (Bulk)')
+    .addItem('Run BULK from "Lets Tag"', 'runBulkFromLetsTag')
+    .addToUi();
+}
+
+
+/***** HELPERS: normalize subject *****/
+function bulkNormSubject_(s) {
+  if (!s) return null;
+  const t = String(s).trim().toLowerCase();
+
+  // Biology support
+  if (t === 'bio' || t.includes('biolog')) return 'biology';
+
+  // Maths support
+  if (t === 'math' || t === 'maths' || t.includes('mathem')) return 'maths';
+
+  if (t.includes('phys'))   return 'physics';
+  if (t.includes('chem'))   return 'chemistry';
+  if (t.includes('botan'))  return 'botany';
+  if (t.includes('zool'))   return 'zoology';
+
+  if (BULK_SUBJECT_KEYS.includes(t)) return t;
+  return null;
+}
+function bulkToTitle_(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+/***** HELPERS: category name for FILE title only *****/
+function bulkSanitizeNamePart_(s) {
+  const t = String(s || '').trim();
+  if (!t) return '';
+  return t
+    .replace(/\s+/g, '_')
+    .replace(/[\\\/\?\%\*\:\|\"<>\u0000-\u001F]+/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+
+/***** DRIVE PARSERS *****/
+function bulkParseFileId_(url) {
+  if (!url) return null;
+  const re = /\/file\/d\/([a-zA-Z0-9_-]{20,})|id=([a-zA-Z0-9_-]{20,})/;
+  const m = re.exec(url);
+  return m ? (m[1] || m[2]) : null;
+}
+function bulkParseFolderId_(url) {
+  if (!url) return null;
+  const re = /\/folders\/([a-zA-Z0-9_-]{20,})|id=([a-zA-Z0-9_-]{20,})/;
+  const m = re.exec(url);
+  return m ? (m[1] || m[2]) : null;
+}
+function bulkGetPdfBlob_(fileId) {
+  const file = DriveApp.getFileById(fileId);
+  let blob = file.getBlob();
+  if (blob.getContentType() !== 'application/pdf') {
+    try { blob = file.getAs('application/pdf'); }
+    catch(e) { throw new Error('Cannot export to PDF: ' + e.message); }
+  }
+  return blob;
+}
+
+
+/***** READ SUBJECT TAGLISTS *****/
+function bulkGetSubjectRows_(subjectKey) {
+  const tabName = BULK_SUBJECT_TAB_NAMES[subjectKey];
+  if (!tabName) return [];
+  const sh = SpreadsheetApp.getActive().getSheetByName(tabName);
+  if (!sh) return [];
+  const rng = sh.getDataRange().getValues();
+  if (rng.length < 2) return [];
+
+  const header = rng[0].map(x => (x||'').toString().trim());
+  BULK_TAG_HEADERS_LONG.forEach(h => {
+    if (!header.includes(h)) throw new Error(`Sheet "${tabName}" missing column: ${h}`);
+  });
+
+  const idx = h => header.indexOf(h);
+  const out = [];
+  for (let r=1; r<rng.length; r++){
+    const row = rng[r];
+    out.push({
+      RowID:            String(row[idx('RowID')]).trim(),
+      Subject:          String(row[idx('Subject')]).trim(),
+      Subject_name:     String(row[idx('Subject_name')]).trim(),
+      Chapter:          String(row[idx('Chapter')]).trim(),
+      Chapter_name:     String(row[idx('Chapter_name')]).trim(),
+      Topic:            String(row[idx('Topic')]).trim(),
+      Topic_name:       String(row[idx('Topic_name')]).trim(),
+      Subtopic:         String(row[idx('Subtopic')]).trim(),
+      Subtopic_name:    String(row[idx('Subtopic_name')]).trim(),
+    });
+  }
+  return out;
+}
+
+// Biology = Botany + Zoology combined
+function bulkGetTagRowsForSubject_(subjVal) {
+  if (subjVal === 'biology') {
+    const bot = bulkGetSubjectRows_('botany');
+    const zoo = bulkGetSubjectRows_('zoology');
+
+    const merged = [];
+    const seen = {};
+
+    const sameRow = (a, b) =>
+      BULK_TAG_HEADERS_LONG.every(h => String(a[h] || '') === String(b[h] || ''));
+
+    [...bot, ...zoo].forEach(r => {
+      if (!r.RowID) return;
+
+      if (!seen[r.RowID]) {
+        seen[r.RowID] = r;
+        merged.push(r);
+        return;
+      }
+
+      if (!sameRow(seen[r.RowID], r)) {
+        throw new Error(
+          'Duplicate RowID across Botany and Zoology Tag sheets for Biology: ' +
+          r.RowID +
+          '. Make RowIDs unique or resolve duplicates.'
+        );
+      }
+    });
+
+    return merged;
+  }
+
+  // All other subjects (including maths) use their own tag sheet
+  if (BULK_SUBJECT_KEYS.includes(subjVal)) return bulkGetSubjectRows_(subjVal);
+  return [];
+}
+
+function bulkTagRowsToCsvText_(rows) {
+  const headers = BULK_TAG_HEADERS_LONG;
+  const lines = [headers.join(',')];
+  rows.forEach(r => {
+    const vals = headers.map(h => (r[h] || '').replace(/"/g,'""'));
+    lines.push(vals.map(v => /[",\n]/.test(v) ? `"${v}"` : v).join(','));
+  });
+  return lines.join('\n');
+}
+function bulkIndexByRowId_(rows) {
+  const map = {};
+  rows.forEach(r => { if (r.RowID) map[r.RowID] = r; });
+  return map;
+}
+
+
+/***** PROMPTS *****/
+function bulkLoadPrompts_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_PROMPT);
+  if (!sh) throw new Error('Missing sheet: ' + SHEET_PROMPT);
+
+  const rng = sh.getDataRange().getValues();
+  const prompts = {};
+  let fallback = '';
+
+  if (rng.length) {
+    const hdr = rng[0].map(s => (s || '').toString().trim().toLowerCase());
+    const iSub = hdr.indexOf('subject');
+    const iPrm = hdr.indexOf('prompt');
+
+    // Table format: Subject | Prompt
+    if (iSub >= 0 && iPrm >= 0) {
+      for (let r=1; r<rng.length; r++){
+        const subjCell = (rng[r][iSub] || '').toString().trim();
+        const subjLow  = subjCell.toLowerCase();
+        const prmp     = (rng[r][iPrm] || '').toString().trim();
+        if (!prmp) continue;
+
+        if (subjLow === 'default') {
+          fallback = prmp;
+          continue;
+        }
+
+        const subjNorm = bulkNormSubject_(subjCell);
+        if (subjNorm) prompts[subjNorm] = prmp;
+      }
+    }
+
+    // Single-cell fallback: prompt!A1
+    const a1 = (rng[0][0] || '').toString().trim();
+    if (a1 && !fallback) fallback = a1;
+  }
+
+  if (!Object.keys(prompts).length && !fallback)
+    throw new Error("No prompt found. Use 'prompt'!A1 or a table: Subject | Prompt (and optional Subject=default).");
+
+  return {prompts, fallback};
+}
+
+function bulkBuildBasePrompt_(subjectValue, prompts, fallback) {
+  if (BULK_SUBJECT_KEYS.includes(subjectValue)) {
+    return prompts[subjectValue] || fallback || '';
+  }
+  throw new Error('Unsupported subject for tagging: ' + subjectValue);
+}
+
+
+/***** WRAPPER PROMPT: TAG ALL QUESTIONS *****/
+function bulkComposeAllQuestionsWrapper_(subjectValue) {
+  const bioNote =
+    subjectValue === 'biology'
+      ? '• Biology scope includes BOTH Botany and Zoology; TagList.csv contains both.\n'
+      : '';
+
+  return (
+    'RUNTIME CONTEXT (do not override subject rules):\n' +
+    '• Input files:\n' +
+    '  1) Questions.pdf – multiple numbered MCQs for a single subject.\n' +
+    '  2) TagList.csv – with columns: RowID, Subject, Subject_name, Chapter, Chapter_name, Topic, Topic_name, Subtopic, Subtopic_name.\n' +
+    `• Subject scope: ${subjectValue}.\n` +
+    bioNote +
+    '• The paper may contain ANY number of questions; do not assume 45.\n' +
+    '• For EVERY numbered question in Questions.pdf, choose exactly ONE RowID whose Subtopic/Subtopic_name best matches the core concept.\n' +
+    '• Output Difficulty as a NUMBER only (1/2/3).\n' +
+    '• You must output one row for each numbered question that appears in the PDF.\n' +
+    '• IMPORTANT: Output ONLY the CSV rows; no prose, no markdown.\n\n' +
+    'OUTPUT (STRICT):\n' +
+    'Question #,RowID,Difficulty\n' +
+    '(No extra columns; one row per question.)\n'
+  );
+}
+
+
+/***** API KEY LOADER (Script Properties first) *****/
+function bulkGetApiKeys_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = (props.getProperty('GEMINI_API_KEYS') || '').trim();
+  if (raw) {
+    const keys = raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (keys.length) return keys;
+  }
+  return BULK_API_KEYS_FALLBACK.filter(k => k && !/PASTE_YOUR_/i.test(k));
+}
+
+
+/***** NETWORK – Gemini (Vertex AI express mode; API key in HEADER) *****/
+function bulkCallModelCsv_(pdfBlob, tagCsvText, fullPrompt) {
+  const apiKeys = bulkGetApiKeys_();
+  if (!apiKeys.length) throw new Error('No API keys found. Set Script Property GEMINI_API_KEYS or fill BULK_API_KEYS_FALLBACK.');
+
+  // ✅ NO ?key=... in URL
+  const url = `${BULK_VERTEX_BASE}/${encodeURIComponent(BULK_MODEL_ID)}:generateContent`;
+
+  const parts = [
+    { text: fullPrompt },
+    { text: '----- BEGIN TagList.csv -----\n' + tagCsvText + '\n----- END TagList.csv -----' },
+    {
+      inlineData: {
+        mimeType: 'application/pdf',
+        data: Utilities.base64Encode(pdfBlob.getBytes())
+      }
+    }
+  ];
+
+  const makePayload = (thinkingBudget) => ({
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      temperature: BULK_TEMP,
+      maxOutputTokens: BULK_MAX_OUTPUT_TOKENS,
+      responseMimeType: 'text/plain',
+      thinkingConfig: { thinkingBudget }
+    },
+    safetySettings: [
+      {category:'HARM_CATEGORY_HARASSMENT',        threshold:'BLOCK_ONLY_HIGH'},
+      {category:'HARM_CATEGORY_DANGEROUS_CONTENT', threshold:'BLOCK_ONLY_HIGH'},
+      {category:'HARM_CATEGORY_HATE_SPEECH',       threshold:'BLOCK_ONLY_HIGH'},
+      {category:'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold:'BLOCK_ONLY_HIGH'}
+    ]
+  });
+
+  const isRateLimitOrQuota = (code, body) =>
+    code === 429 ||
+    code === 503 ||
+    (code === 403 && /quota|exceed|exceeded|rate/i.test(body || ''));
+
+  const extractTextAndMeta = (body) => {
+    const json = JSON.parse(body);
+    const cand = (((json || {}).candidates || [])[0]) || {};
+    const fin  = cand.finishReason || '';
+    const prf  = json && json.promptFeedback ? JSON.stringify(json.promptFeedback) : '';
+    const safety = cand.safetyRatings ? JSON.stringify(cand.safetyRatings) : '';
+
+    const cparts = (cand.content && cand.content.parts) ? cand.content.parts : [];
+    const text = (cparts || []).map(p => p.text || '').join('');
+    const rawText = String(text || '');
+    const nonWs = rawText.replace(/\s+/g, '');
+    return { rawText, nonWs, fin, prf, safety };
+  };
+
+  const thinkingBudgetsToTry = [BULK_THINKING_BUDGET, BULK_THINKING_BUDGET_RETRY];
+
+  for (let k = 0; k < apiKeys.length; k++) {
+    let lastError = null;
+
+    for (let attempt = 0; attempt < BULK_MAX_RETRIES_KEY; attempt++) {
+      for (let tb = 0; tb < thinkingBudgetsToTry.length; tb++) {
+        const payload = makePayload(thinkingBudgetsToTry[tb]);
+
+        try {
+          const res = UrlFetchApp.fetch(url, {
+            method: 'post',
+            contentType: 'application/json',
+            payload: JSON.stringify(payload),
+            muteHttpExceptions: true,
+            // ✅ Key in header
+            headers: {
+              'X-Goog-Api-Key': apiKeys[k],
+            }
+          });
+
+          const code = res.getResponseCode();
+          const body = res.getContentText();
+
+          if (code === 200) {
+            const { rawText, nonWs, fin, prf, safety } = extractTextAndMeta(body);
+
+            if (nonWs) return rawText.trim();
+
+            if (String(fin).toUpperCase() === 'MAX_TOKENS' && tb < thinkingBudgetsToTry.length - 1) {
+              continue;
+            }
+
+            throw new Error(
+              'Empty/whitespace-only model text. finishReason=' + fin +
+              (prf ? ' promptFeedback=' + prf : '') +
+              (safety ? ' safety=' + safety : '')
+            );
+          }
+
+          if (isRateLimitOrQuota(code, body)) {
+            Utilities.sleep(BULK_429_BACKOFF_MS);
+            if (attempt < BULK_MAX_RETRIES_KEY - 1) continue;
+            lastError = new Error(`Gemini rate limit or quota (HTTP ${code}): ${body}`);
+            break;
+          }
+
+          if (code === 401) throw new Error('Unauthorized (401): ' + body);
+          if (code === 400 || code === 403) throw new Error(`Gemini error ${code}: ${body}`);
+
+          lastError = new Error(`HTTP ${code}: ${body}`);
+        } catch (e) {
+          lastError = e;
+        }
+      }
+
+      Utilities.sleep(BULK_BACKOFF_MS[Math.min(attempt, BULK_BACKOFF_MS.length - 1)]);
+    }
+
+    if (k === apiKeys.length - 1) {
+      throw lastError || new Error('All API keys failed (rate limit / quota / network).');
+    }
+  }
+
+  throw new Error('All API keys failed or were throttled.');
+}
+
+
+/***** PARSER – free CSV (no fixed allowed list) *****/
+function bulkParseCsvFree_(csvText) {
+  let t = String(csvText || '').trim();
+  t = t.replace(/^```[a-zA-Z]*\s*/, '').replace(/\s*```$/, '').trim();
+  if (!t) return [];
+
+  const lines = t.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+  const rows  = lines
+    .map(ln => (Utilities.parseCsv(ln)[0] || []).map(x => String(x || '').trim()))
+    .filter(arr => arr.length);
+
+  if (!rows.length) return [];
+
+  const isHeader = (arr) => {
+    const low = arr.map(x => x.toLowerCase());
+    const hasRowId = low.some(x => x.replace(/\s+/g,'') === 'rowid');
+    const hasDiff  = low.some(x => x.replace(/\s+/g,'') === 'difficulty');
+    const hasQ     = low.some(x => /question/.test(x));
+    return hasRowId && hasDiff && hasQ;
+  };
+
+  let headerRowIndex = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (isHeader(rows[i])) { headerRowIndex = i; break; }
+  }
+
+  const out = [];
+  const diffToNum = (s) => {
+    const x = String(s || '').trim();
+    if (/^[123]$/.test(x)) return x;
+    const d = x.toLowerCase();
+    if (d.includes('easy')) return '1';
+    if (d.includes('medium')) return '2';
+    if (d.includes('hard')) return '3';
+    return '';
+  };
+
+  if (headerRowIndex >= 0) {
+    const hdr = rows[headerRowIndex].map(x => x.toLowerCase());
+    const norm = (s) => s.toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9#]/g,'');
+    const iQ = hdr.findIndex(x => /^(question#|questionno|q#|qno|q_no|question)$/.test(norm(x)));
+    const iR = hdr.findIndex(x => x.replace(/\s+/g,'') === 'rowid');
+    const iD = hdr.findIndex(x => x.replace(/\s+/g,'') === 'difficulty');
+
+    for (let i = headerRowIndex + 1; i < rows.length; i++) {
+      const r = rows[i];
+      let q = null;
+
+      if (iQ >= 0 && iQ < r.length) {
+        const m = (r[iQ] || '').match(/\d+/);
+        if (m) q = parseInt(m[0], 10);
+      }
+
+      const rid  = (iR >= 0 && iR < r.length) ? (r[iR] || '').toString().trim() : '';
+      let diff   = (iD >= 0 && iD < r.length) ? (r[iD] || '').toString().trim() : '';
+      diff = diffToNum(diff);
+
+      if (q != null && rid) out.push({ q, RowID: rid, Difficulty: diff });
+    }
+    return out;
+  }
+
+  // No header: assume "Question #, RowID, Difficulty"
+  rows.forEach(arr => {
+    if (!arr.length) return;
+    let q = null;
+    let rid = '';
+    let diff = '';
+
+    if (arr.length >= 3 && /\d+/.test(arr[0])) {
+      const m = (arr[0] || '').match(/\d+/);
+      if (m) q = parseInt(m[0], 10);
+      rid  = arr[1];
+      diff = diffToNum(arr[2]);
+    }
+
+    if (q != null && rid) out.push({ q, RowID: rid, Difficulty: diff });
+  });
+
+  return out;
+}
+
+
+/***** DEST SHEET CREATION – returns URL too *****/
+function bulkCreateDestSpreadsheet_(baseName, folderId) {
+  const tz = Session.getScriptTimeZone() || 'UTC';
+  const stamp = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd_HH-mm-ss');
+  const name = `${baseName}_${stamp}`;
+
+  const ss = SpreadsheetApp.create(name);
+  const file = DriveApp.getFileById(ss.getId());
+  const folder = DriveApp.getFolderById(folderId);
+  folder.addFile(file);
+  DriveApp.getRootFolder().removeFile(file);
+
+  const sh = ss.getSheets()[0];
+
+  sh.getRange(1,1).setValue('Question #');
+  sh.getRange(1,2).setValue('RowID');
+  sh.getRange(1,3,1,10).setValues([[
+    'Subject','Subject_name','Chapter','Chapter_name','Topic','Topic_name','Subtopic','Subtopic_name','Difficulty','Difficulty_name'
+  ]]);
+
+  sh.hideColumn(sh.getRange(1,1));
+  sh.hideColumn(sh.getRange(1,2));
+  sh.setFrozenRows(1);
+
+  return { ssId: ss.getId(), url: ss.getUrl(), sheet: sh };
+}
+
+
+/***** Difficulty name *****/
+function bulkDifficultyName_(n) {
+  if (n === 1 || n === '1') return 'Easy';
+  if (n === 2 || n === '2') return 'Medium';
+  if (n === 3 || n === '3') return 'Hard';
+  return '';
+}
+
+
+/***** MAIN – FLEX BULK from "Lets Tag" (with chapter filter + output link) *****/
+function runBulkFromLetsTag() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+
+  try {
+    const ctl = SpreadsheetApp.getActive().getSheetByName(SHEET_LETS_TAG);
+    if (!ctl) throw new Error('Missing sheet: "Lets Tag"');
+
+    const data = ctl.getDataRange().getValues();
+    if (data.length < 2) {
+      SpreadsheetApp.getActiveSpreadsheet().toast('Nothing to process.');
+      return;
+    }
+
+    const {prompts, fallback} = bulkLoadPrompts_();
+
+    for (let r = 1; r < data.length; r++) {
+      // Lets Tag columns:
+      // A=0 Source, B=1 Folder, C=2 Subject, D=3 Category, E=4 Chapters, F=5 Status, G=6 Link
+      const srcLink   = (data[r][0] || '').toString().trim(); // A
+      const dstLink   = (data[r][1] || '').toString().trim(); // B
+      const subjRaw   = (data[r][2] || '').toString().trim(); // C
+      const catRaw    = (data[r][3] || '').toString().trim(); // D
+      const chapRaw   = (data[r][4] || '').toString().trim(); // E
+      const status    = (data[r][5] || '').toString().trim(); // F
+      const rowIndex1 = r + 1;
+
+      const COL_STATUS = 6; // F (1-based)
+      const COL_LINK   = 7; // G (1-based)
+
+      if (/^done$/i.test(status)) continue;
+
+      try {
+        const fileId   = bulkParseFileId_(srcLink);   if (!fileId) throw new Error('Invalid PDF link');
+        const folderId = bulkParseFolderId_(dstLink); if (!folderId) throw new Error('Invalid folder link');
+
+        const subjVal  = bulkNormSubject_(subjRaw);
+        if (!subjVal) throw new Error('Unsupported/missing subject: ' + subjRaw);
+
+        const categoryPart = bulkSanitizeNamePart_(catRaw); // name only
+
+        // TagList rows for this subject
+        const allTagRows = bulkGetTagRowsForSubject_(subjVal);
+        if (!allTagRows.length) throw new Error(`No TagList rows for ${subjVal}`);
+
+        // Chapter filter (Chapter_name)
+        let tagRows = allTagRows;
+        const chapFilters = bulkParseChapterFilters_(chapRaw);
+
+        if (chapFilters.length) {
+          const chapSet = new Set(chapFilters.map(s => s.toLowerCase()));
+          tagRows = allTagRows.filter(rr => chapSet.has((rr.Chapter_name || '').toLowerCase()));
+          if (!tagRows.length) {
+            throw new Error(`No TagList rows for ${subjVal} with Chapter_name in: ` + chapFilters.join(', '));
+          }
+        }
+
+        const tagCsv  = bulkTagRowsToCsvText_(tagRows);
+        const tagById = bulkIndexByRowId_(tagRows);
+
+        const basePrompt = bulkBuildBasePrompt_(subjVal, prompts, fallback);
+        const pdfBlob    = bulkGetPdfBlob_(fileId);
+
+        const wrap   = bulkComposeAllQuestionsWrapper_(subjVal);
+        const prompt = basePrompt + '\n\n' + wrap;
+
+        const raw    = bulkCallModelCsv_(pdfBlob, tagCsv, prompt);
+        const parsed = bulkParseCsvFree_(raw);
+
+        if (!parsed || !parsed.length) {
+          ctl.getRange(rowIndex1, COL_STATUS).setValue('Error: No usable rows from model.');
+          ctl.getRange(rowIndex1, COL_LINK).setValue('');
+          continue;
+        }
+
+        // Deduplicate: keep first mapping per question #
+        const resultsMap = {};
+        parsed.forEach(o => {
+          if (!o || o.q == null || !o.RowID) return;
+          const qNum = Number(o.q);
+          if (!Number.isInteger(qNum) || qNum <= 0) return;
+          if (!(qNum in resultsMap)) resultsMap[qNum] = { RowID: o.RowID, Difficulty: o.Difficulty };
+        });
+
+        const qNumbers = Object.keys(resultsMap)
+          .map(x => parseInt(x,10))
+          .filter(x => !isNaN(x))
+          .sort((a,b)=>a-b);
+
+        if (!qNumbers.length) {
+          ctl.getRange(rowIndex1, COL_STATUS).setValue('Error: No valid Question # parsed from CSV.');
+          ctl.getRange(rowIndex1, COL_LINK).setValue('');
+          continue;
+        }
+
+        const out = [];
+        qNumbers.forEach(q => {
+          const found = resultsMap[q];
+          if (!found) return;
+          const tl = tagById[found.RowID];
+          if (!tl) return;
+
+          const diffNum  = parseInt(found.Difficulty, 10);
+          const diffName = bulkDifficultyName_(diffNum);
+
+          out.push([
+            q,
+            found.RowID,
+            tl.Subject,
+            tl.Subject_name,
+            tl.Chapter,
+            tl.Chapter_name,
+            tl.Topic,
+            tl.Topic_name,
+            tl.Subtopic,
+            tl.Subtopic_name,
+            diffNum || '',
+            diffName
+          ]);
+        });
+
+        if (!out.length) {
+          ctl.getRange(rowIndex1, COL_STATUS).setValue('Error: No rows with valid RowID found.');
+          ctl.getRange(rowIndex1, COL_LINK).setValue('');
+          continue;
+        }
+
+        // Output file name includes Category ONLY if provided
+        const baseName = categoryPart
+          ? `${bulkToTitle_(subjVal)}_${categoryPart}__Tagging`
+          : `${bulkToTitle_(subjVal)}_Tagging`;
+
+        const { sheet, url } = bulkCreateDestSpreadsheet_(baseName, folderId);
+        sheet.getRange(2, 1, out.length, out[0].length).setValues(out);
+
+        ctl.getRange(rowIndex1, COL_STATUS).setValue('Done');
+        ctl.getRange(rowIndex1, COL_LINK).setValue(url);
+
+      } catch (e) {
+        const errMsg = 'Error: ' + (e && e.message ? e.message : String(e));
+        ctl.getRange(rowIndex1, COL_STATUS).setValue(errMsg);
+        ctl.getRange(rowIndex1, COL_LINK).setValue('');
+      }
+
+      if (BULK_COOLDOWN_BETWEEN_ROWS_MS > 0) Utilities.sleep(BULK_COOLDOWN_BETWEEN_ROWS_MS);
+    }
+
+    SpreadsheetApp.getActiveSpreadsheet().toast('Bulk tagging run complete.');
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+function bulkParseChapterFilters_(chapRaw) {
+  const s = (chapRaw || '').toString().trim();
+  if (!s) return [];
+
+  // CSV parsing supports: "Work, Energy and Power", Kinematics
+  // -> ["Work, Energy and Power", "Kinematics"]
+  try {
+    const parsed = Utilities.parseCsv(s);
+    const row = (parsed && parsed[0]) ? parsed[0] : [];
+    return row.map(x => String(x || '').trim()).filter(Boolean);
+  } catch (e) {
+    // fallback: old behavior
+    return s.split(',').map(x => x.trim()).filter(Boolean);
+  }
+}

@@ -1,0 +1,690 @@
+# ============================================================
+# ONE-CELL COLAB SCRIPT
+# Extract question/solution screenshots from PDF(s) and save them to
+# "Processed Screenshots" next to the PDF in Google Drive
+#
+# ADDED:
+#   - Supports Question PDF and/or Solution PDF
+#   - Names question images as Q1, Q2... and solution images as S1, S2...
+#   - Creates XLSX file(s) with the same structure as your second code
+#   - Bilingual mode:
+#       * creates English and Hindi folders
+#       * creates one XLSX inside English folder and one inside Hindi folder
+#       * fills Column S automatically:
+#           left column  = English
+#           right column = Hindi
+#   - Single mode:
+#       * creates one XLSX in Processed Screenshots folder
+#       * asks user for language and fills Column S with that language
+#   - If only Question PDF is given -> fills only Column G
+#   - If only Solution PDF is given -> fills only Column L
+#   - If both PDFs are given -> asks separate start pages for both
+#
+# EXTRACTION LOGIC IS KEPT THE SAME AS YOUR FIRST CODE.
+# ============================================================
+
+# -------------------------------
+# Install dependencies
+# -------------------------------
+!pip -q install "pymupdf>=1.24.3" pydrive2 openpyxl
+
+# -------------------------------
+# Google auth + imports
+# -------------------------------
+from google.colab import auth as colab_auth
+colab_auth.authenticate_user()
+
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from oauth2client.client import GoogleCredentials
+
+import re
+import os
+import shutil
+from pathlib import Path
+import fitz  # PyMuPDF
+from openpyxl import Workbook
+import time # Added for retry mechanism
+
+gauth = GoogleAuth()
+gauth.credentials = GoogleCredentials.get_application_default()
+drive = GoogleDrive(gauth)
+
+print("✅ Google Drive connected.")
+
+# ============================================================
+# USER INPUTS
+# ============================================================
+QUESTION_DRIVE_URL = input("\nPaste Google Drive FOLDER link or FILE link for QUESTION PDF [leave blank if not available]: ").strip()
+SOLUTION_DRIVE_URL = input("Paste Google Drive FOLDER link or FILE link for SOLUTION PDF [leave blank if not available]: ").strip()
+
+if not QUESTION_DRIVE_URL and not SOLUTION_DRIVE_URL:
+    raise SystemExit("❌ You must provide at least one PDF link (Question or Solution).")
+
+# ============================================================
+# START PAGE INPUTS
+# ============================================================
+if QUESTION_DRIVE_URL and SOLUTION_DRIVE_URL:
+    q_start_page_raw = input("Start page number for QUESTION PDF [default = 1]: ").strip()
+    s_start_page_raw = input("Start page number for SOLUTION PDF [default = 1]: ").strip()
+
+    QUESTION_START_PAGE = int(q_start_page_raw) if q_start_page_raw else 1
+    SOLUTION_START_PAGE = int(s_start_page_raw) if s_start_page_raw else 1
+
+elif QUESTION_DRIVE_URL:
+    q_start_page_raw = input("Start page number for QUESTION PDF [default = 1]: ").strip()
+    QUESTION_START_PAGE = int(q_start_page_raw) if q_start_page_raw else 1
+    SOLUTION_START_PAGE = 1
+
+elif SOLUTION_DRIVE_URL:
+    s_start_page_raw = input("Start page number for SOLUTION PDF [default = 1]: ").strip()
+    SOLUTION_START_PAGE = int(s_start_page_raw) if s_start_page_raw else 1
+    QUESTION_START_PAGE = 1
+
+mode_raw = input("Mode? Type 'bilingual' or 'single' [default = bilingual]: ").strip().lower()
+MODE = mode_raw if mode_raw in ["bilingual", "single"] else "bilingual"
+
+SINGLE_LANGUAGE = ""
+if MODE == "single":
+    lang_raw = input("Enter language for single-language paper [English/Hindi]: ").strip().lower()
+    if lang_raw in ["english", "eng"]:
+        SINGLE_LANGUAGE = "English"
+    elif lang_raw in ["hindi", "hin"]:
+        SINGLE_LANGUAGE = "Hindi"
+    else:
+        raise SystemExit("❌ For single mode, language must be English or Hindi.")
+
+if QUESTION_DRIVE_URL:
+    print(f"\n📌 QUESTION start page : {QUESTION_START_PAGE}")
+if SOLUTION_DRIVE_URL:
+    print(f"📌 SOLUTION start page : {SOLUTION_START_PAGE}")
+print(f"🌐 Mode                : {MODE.upper()}")
+if MODE == "single":
+    print(f"📝 Language            : {SINGLE_LANGUAGE}")
+
+# ============================================================
+# DRIVE HELPERS
+# ============================================================
+def parse_drive_link(url: str):
+    """
+    Return ('folder'|'file', id) from common Drive links.
+    Supports links like:
+      - https://drive.google.com/drive/folders/<ID>
+      - https://drive.google.com/drive/u/0/folders/<ID>
+      - https://drive.google.com/file/d/<ID>/view
+      - https://drive.google.com/open?id=<ID>
+    """
+    m = re.search(r"/folders/([a-zA-Z0-9_-]+)", url)
+    if m:
+        return ("folder", m.group(1))
+
+    m = re.search(r"/file/d/([a-zA-Z0-9_-]+)", url)
+    if m:
+        return ("file", m.group(1))
+
+    m = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url)
+    if m:
+        return ("file", m.group(1))
+
+    raise SystemExit("❌ Couldn't parse the Drive link. Paste a standard Drive folder or file link.")
+
+def list_pdfs_in_folder(folder_id: str):
+    q = f"'{folder_id}' in parents and trashed=false and mimeType='application/pdf'"
+    return drive.ListFile({'q': q}).GetList()
+
+def choose_pdf_from_folder(folder_id: str, label="PDF"):
+    pdfs = list_pdfs_in_folder(folder_id)
+
+    if len(pdfs) == 0:
+        raise SystemExit(f"❌ No PDF found in the provided folder for {label}.")
+
+    if len(pdfs) == 1:
+        return pdfs[0]
+
+    print(f"\nMultiple PDFs found in the folder for {label}:")
+    for i, f in enumerate(pdfs, start=1):
+        print(f"  {i}. {f['title']}")
+
+    choice_raw = input(f"Choose {label} PDF number [1-{len(pdfs)}]: ").strip()
+    try:
+        choice = int(choice_raw)
+        if not (1 <= choice <= len(pdfs)):
+            raise ValueError
+    except:
+        raise SystemExit("❌ Invalid selection.")
+
+    return pdfs[choice - 1]
+
+def get_parent_folder_id_of_file(file_id: str) -> str:
+    f = drive.CreateFile({'id': file_id})
+    f.FetchMetadata(fields='parents')
+    parents = f.metadata.get('parents', [])
+    return parents[0]['id'] if parents else 'root'
+
+def ensure_folder(parent_id: str, folder_name: str) -> str:
+    q = (
+        f"'{parent_id}' in parents and trashed=false and "
+        f"mimeType='application/vnd.google-apps.folder' and title='{folder_name}'"
+    )
+    found = drive.ListFile({'q': q}).GetList()
+    if found:
+        return found[0]['id']
+
+    folder = drive.CreateFile({
+        'title': folder_name,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [{'id': parent_id}]
+    })
+    folder.Upload()
+    return folder['id']
+
+def delete_existing_pngs(folder_id: str):
+    q = f"'{folder_id}' in parents and trashed=false"
+    files = drive.ListFile({'q': q}).GetList()
+    for f in files:
+        title = f.get('title', '')
+        if title.lower().endswith('.png'):
+            try:
+                f.Delete()
+            except Exception as e:
+                print(f"⚠️ Could not delete {title}: {e}")
+
+def upload_file_unique(local_path: Path, folder_id: str, max_retries=5, initial_delay=1):
+    q = f"'{folder_id}' in parents and trashed=false and title='{local_path.name}'"
+    existing = drive.ListFile({'q': q}).GetList()
+    for old in existing:
+        try:
+            old.Delete()
+        except Exception as e:
+            print(f"⚠️ Couldn't delete existing {local_path.name}: {e}")
+
+    retries = 0
+    delay = initial_delay
+    while retries < max_retries:
+        try:
+            f = drive.CreateFile({
+                'title': local_path.name,
+                'parents': [{'id': folder_id}]
+            })
+            f.SetContentFile(str(local_path))
+            f.Upload()
+            return # Success, exit loop
+        except Exception as e:
+            if "Transient failure" in str(e) or "503" in str(e):
+                retries += 1
+                print(f"⚠️ Transient error uploading {local_path.name}. Retrying in {delay} seconds... (Attempt {retries}/{max_retries})")
+                time.sleep(delay)
+                delay *= 2 # Exponential backoff
+            else:
+                raise # Re-raise if not a transient error
+
+    raise Exception(f"❌ Failed to upload {local_path.name} after {max_retries} retries.")
+
+def resolve_pdf_and_parent(url: str, label="PDF"):
+    kind, target_id = parse_drive_link(url)
+
+    if kind == "folder":
+        pdf_file = choose_pdf_from_folder(target_id, label=label)
+        parent_folder_id = target_id
+
+    elif kind == "file":
+        pdf_file = drive.CreateFile({'id': target_id})
+        pdf_file.FetchMetadata(fields='mimeType,title,parents')
+        if pdf_file['mimeType'] != 'application/pdf':
+            raise SystemExit(f"❌ The provided {label} file link is not a PDF.")
+        parent_folder_id = get_parent_folder_id_of_file(target_id)
+
+    else:
+        raise SystemExit("❌ Unsupported link.")
+
+    return pdf_file, parent_folder_id
+
+# ============================================================
+# EXTRACTION LOGIC (UNCHANGED, only prefix added for Q/S naming)
+# ============================================================
+PAGE_WIDTH_MID = 297
+COL_1_L, COL_1_R = 24, 291
+COL_2_L, COL_2_R = 304, 568
+FOOTER_Y = 808
+BOTTOM_PAD = 6
+
+QUESTION_X_COL1 = (20, 250)   # English / left column
+QUESTION_X_COL2 = (280, 560)  # Hindi / right column
+
+def col_bounds(col):
+    return (COL_1_L, COL_1_R) if col == 1 else (COL_2_L, COL_2_R)
+
+def find_questions(doc, start_page=1, cols=None):
+    if cols is None:
+        cols = [1, 2]
+
+    q_pat = re.compile(r'^([1-9]|[1-9][0-9]|1[0-7][0-9]|180)\.(?:\s|\(|$)')
+    questions = []
+
+    for pn in range(start_page - 1, len(doc)):
+        page = doc[pn]
+        page_dict = page.get_text("dict")
+
+        for b in page_dict["blocks"]:
+            if b["type"] != 0:
+                continue
+            for l in b["lines"]:
+                for s in l["spans"]:
+                    t = s["text"].strip()
+                    m = q_pat.match(t)
+                    if not m:
+                        continue
+
+                    x0, y0, x1, y1 = s["bbox"]
+
+                    in_c1 = QUESTION_X_COL1[0] <= x0 <= QUESTION_X_COL1[1]
+                    in_c2 = QUESTION_X_COL2[0] <= x0 <= QUESTION_X_COL2[1]
+                    if not (in_c1 or in_c2):
+                        continue
+
+                    col = 1 if x0 < PAGE_WIDTH_MID else 2
+                    if col not in cols:
+                        continue
+
+                    questions.append({
+                        "q_num": int(m.group(1)),
+                        "page": pn,
+                        "col": col,
+                        "bbox": [x0, y0, x1, y1],
+                    })
+
+    questions.sort(key=lambda q: (q["page"], q["col"], q["bbox"][1]))
+    return questions
+
+def content_bottom_in_col(page, col, from_y, to_y):
+    max_y1 = from_y
+
+    for b in page.get_text("dict")["blocks"]:
+        bx0, by0, bx1, by1 = b["bbox"]
+        cx = (bx0 + bx1) / 2
+
+        if col == 1 and cx > PAGE_WIDTH_MID:
+            continue
+        if col == 2 and cx < PAGE_WIDTH_MID:
+            continue
+        if by1 <= from_y or by0 >= FOOTER_Y:
+            continue
+        if by0 >= to_y:
+            continue
+        if by1 > max_y1:
+            max_y1 = by1
+
+    from_x, to_x = col_bounds(col)
+
+    for d in page.get_drawings():
+        rect = d["rect"]
+        cx = (rect.x0 + rect.x1) / 2
+
+        if cx < from_x or cx > to_x:
+            continue
+        if rect.y1 <= from_y or rect.y0 >= FOOTER_Y:
+            continue
+        if rect.y0 >= to_y:
+            continue
+        if rect.y1 > max_y1:
+            max_y1 = rect.y1
+
+    return max_y1
+
+def extract_col(doc, questions, output_dir, prefix="Q"):
+    os.makedirs(output_dir, exist_ok=True)
+
+    for i, q in enumerate(questions):
+        page_num = q["page"]
+        col = q["col"]
+        start_y = q["bbox"][1]
+        end_q = questions[i + 1] if i + 1 < len(questions) else None
+
+        same_col = bool(end_q and end_q["page"] == page_num and end_q["col"] == col)
+
+        if same_col:
+            nominal = end_q["bbox"][1]
+            real_bot = content_bottom_in_col(doc[page_num], col, start_y, nominal)
+            end_y = min(real_bot + BOTTOM_PAD, nominal - 1)
+            if end_y < start_y:
+                end_y = nominal
+        else:
+            real_bot = content_bottom_in_col(doc[page_num], col, start_y, FOOTER_Y)
+            end_y = min(real_bot + BOTTOM_PAD, FOOTER_Y)
+
+        x0, x1 = col_bounds(col)
+        page = doc[page_num]
+
+        # Draw white mask *only* over the exact width of the digits + dot
+        mx0, my0, mx1, my1 = q["bbox"]
+        q_str = str(q["q_num"]) + "."
+        approx_width = (len(q_str) * 6) + 2
+        mask_x1 = min(mx0 + approx_width, mx1)
+
+        page.draw_rect(
+            fitz.Rect(mx0 - 2, my0 - 2, mask_x1, my1 + 2),
+            color=(1, 1, 1),
+            fill=(1, 1, 1)
+        )
+
+        clip = fitz.Rect(x0, start_y, x1, end_y)
+        if clip.height < 5 or clip.width < 5:
+            continue
+
+        pix = page.get_pixmap(clip=clip, dpi=300)
+
+        base = f"{prefix}{q['q_num']}"
+        fname = f"{base}.png"
+        c = 2
+        while os.path.exists(os.path.join(output_dir, fname)):
+            fname = f"{base}_{c}.png"
+            c += 1
+
+        pix.save(os.path.join(output_dir, fname))
+
+    print(f"   ✅ {len(questions)} images saved to: {output_dir}")
+
+def run_extraction(pdf_path, output_base_dir, start_page=1, bilingual=False, prefix="Q"):
+    doc = fitz.open(pdf_path)
+
+    if bilingual:
+        eng_dir = os.path.join(output_base_dir, "English")
+        hindi_dir = os.path.join(output_base_dir, "Hindi")
+
+        print(f"🔍 Scanning {prefix} English questions (left column)...")
+        eng_qs = find_questions(doc, start_page=start_page, cols=[1])
+        print(f"   Found {len(eng_qs)} markers.")
+
+        print(f"🔍 Scanning {prefix} Hindi questions (right column)...")
+        hin_qs = find_questions(doc, start_page=start_page, cols=[2])
+        print(f"   Found {len(hin_qs)} markers.")
+
+        eng_prefix = prefix          # Q or S
+        hin_prefix = prefix + "H"    # QH or SH
+
+        print(f"\n📸 Extracting {eng_prefix} English screenshots...")
+        extract_col(doc, eng_qs, eng_dir, prefix=eng_prefix)
+
+        print(f"📸 Extracting {hin_prefix} Hindi screenshots...")
+        extract_col(doc, hin_qs, hindi_dir, prefix=hin_prefix)
+    else:
+        print(f"🔍 Scanning {prefix} questions...")
+        questions = find_questions(doc, start_page=start_page)
+        print(f"   Found {len(questions)} markers.")
+
+        print(f"\n📸 Extracting {prefix} screenshots...")
+        extract_col(doc, questions, output_base_dir, prefix=prefix)
+
+    doc.close()
+    print(f"\n🎉 {prefix} extraction complete!")
+
+# ============================================================
+# XLSX HELPERS
+# ============================================================
+XLSX_HEADERS = [
+    "Display Order*","QBG Subject Id","QBG Chapter Id","QBG Topic Id","QBG SubTopic Id",
+    "Question Text","Question Image","Option Text","Option Image","Answer*",
+    "Sol Text","Sol Image","Sol Video","Question Type*","Positive Marks*",
+    "Negative Marks","Partial Marks","Difficulty level","Language*","Comp Id",
+    "Comp Image","Section Image","QBG Question id","QR Link","PYQ Years"
+]
+
+def extract_num_from_name(filename: str, prefixes):
+    if isinstance(prefixes, str):
+        prefixes = [prefixes]
+
+    for prefix in prefixes:
+        m = re.match(rf"^{re.escape(prefix)}(\d+)(?:_\d+)?\.png$", filename, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+    return None
+
+def build_rows_from_folder(folder_path: Path, language_label: str):
+    q_map = {}
+    s_map = {}
+
+    if not folder_path.exists():
+        return []
+
+    for p in sorted(folder_path.glob("*.png")):
+        n_q = extract_num_from_name(p.name, ["Q", "QH"])
+        n_s = extract_num_from_name(p.name, ["S", "SH"])
+
+        if n_q is not None:
+            q_map[n_q] = p.name
+        elif n_s is not None:
+            s_map[n_s] = p.name
+
+    all_nums = sorted(set(q_map.keys()) | set(s_map.keys()))
+
+    rows = []
+    for n in all_nums:
+        rows.append({
+            "display_order": n,
+            "question_image": q_map.get(n, ""),
+            "sol_image": s_map.get(n, ""),
+            "qbg_question_id": f"QH{n}" if language_label == "Hindi" else f"Q{n}"
+        })
+
+    return rows
+
+def build_tagging_xlsx(rows, out_xlsx: Path, language_label: str):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Tagging"
+
+    for c, h in enumerate(XLSX_HEADERS, start=1):
+        ws.cell(row=1, column=c).value = h
+
+    ws.column_dimensions["A"].width = 16
+    ws.column_dimensions["G"].width = 28
+    ws.column_dimensions["L"].width = 28
+    ws.column_dimensions["S"].width = 14
+    ws.column_dimensions["W"].width = 18
+
+    r = 2
+    for item in rows:
+        ws.cell(row=r, column=1).value  = item["display_order"]            # A
+        ws.cell(row=r, column=7).value  = item.get("question_image", "")   # G
+        ws.cell(row=r, column=12).value = item.get("sol_image", "")        # L
+        ws.cell(row=r, column=23).value = item["qbg_question_id"]          # W
+
+        ws.cell(row=r, column=8).value  = "1~2~3~4"                        # H
+        ws.cell(row=r, column=14).value = "Single"                         # N
+        ws.cell(row=r, column=15).value = 4                                # O
+        ws.cell(row=r, column=16).value = 1                                # P
+        ws.cell(row=r, column=19).value = language_label                   # S
+
+        r += 1
+
+    wb.save(out_xlsx)
+
+# ============================================================
+# RESOLVE PDFs + OUTPUT LOCATION
+# ============================================================
+question_pdf_file = None
+solution_pdf_file = None
+question_parent_folder_id = None
+solution_parent_folder_id = None
+
+if QUESTION_DRIVE_URL:
+    question_pdf_file, question_parent_folder_id = resolve_pdf_and_parent(QUESTION_DRIVE_URL, label="QUESTION")
+    print(f"\n📄 Selected QUESTION PDF: {question_pdf_file['title']}")
+
+if SOLUTION_DRIVE_URL:
+    solution_pdf_file, solution_parent_folder_id = resolve_pdf_and_parent(SOLUTION_DRIVE_URL, label="SOLUTION")
+    print(f"📄 Selected SOLUTION PDF: {solution_pdf_file['title']}")
+
+# Use question PDF parent folder if available, otherwise solution PDF parent folder
+parent_folder_id = question_parent_folder_id or solution_parent_folder_id
+
+if question_parent_folder_id and solution_parent_folder_id and question_parent_folder_id != solution_parent_folder_id:
+    print("⚠️ Question PDF and Solution PDF are in different folders.")
+    print("⚠️ Output will be created next to the QUESTION PDF folder.")
+
+# ============================================================
+# CREATE DRIVE OUTPUT FOLDERS
+# ============================================================
+processed_folder_id = ensure_folder(parent_folder_id, "Processed Screenshots")
+
+if MODE == "bilingual":
+    english_folder_id = ensure_folder(processed_folder_id, "English")
+    hindi_folder_id = ensure_folder(processed_folder_id, "Hindi")
+    print("📁 Output folder: Processed Screenshots / English")
+    print("📁 Output folder: Processed Screenshots / Hindi")
+else:
+    english_folder_id = None
+    hindi_folder_id = None
+    print("📁 Output folder: Processed Screenshots")
+
+# ============================================================
+# DOWNLOAD PDFs LOCALLY
+# ============================================================
+local_question_pdf = Path("/content/question_input.pdf")
+local_solution_pdf = Path("/content/solution_input.pdf")
+
+if local_question_pdf.exists():
+    local_question_pdf.unlink()
+if local_solution_pdf.exists():
+    local_solution_pdf.unlink()
+
+if question_pdf_file:
+    question_pdf_file.GetContentFile(str(local_question_pdf))
+    print(f"📥 Downloaded QUESTION PDF to: {local_question_pdf}")
+
+if solution_pdf_file:
+    solution_pdf_file.GetContentFile(str(local_solution_pdf))
+    print(f"📥 Downloaded SOLUTION PDF to: {local_solution_pdf}")
+
+# ============================================================
+# LOCAL STAGING
+# ============================================================
+staging_root = Path("/content/Processed Screenshots")
+shutil.rmtree(staging_root, ignore_errors=True)
+staging_root.mkdir(parents=True, exist_ok=True)
+
+# ============================================================
+# PREFIX SELECTION
+# ============================================================
+if MODE == "single" and SINGLE_LANGUAGE == "Hindi":
+    QUESTION_PREFIX = "QH"
+    SOLUTION_PREFIX = "SH"
+else:
+    QUESTION_PREFIX = "Q"
+    SOLUTION_PREFIX = "S"
+
+# ============================================================
+# PROCESS QUESTION PDF
+# ============================================================
+if question_pdf_file:
+    print("\n" + "="*70)
+    print("PROCESSING QUESTION PDF")
+    print("="*70)
+    run_extraction(
+        pdf_path=str(local_question_pdf),
+        output_base_dir=str(staging_root),
+        start_page=QUESTION_START_PAGE,
+        bilingual=(MODE == "bilingual"),
+        prefix=QUESTION_PREFIX
+    )
+
+# ============================================================
+# PROCESS SOLUTION PDF
+# ============================================================
+if solution_pdf_file:
+    print("\n" + "="*70)
+    print("PROCESSING SOLUTION PDF")
+    print("="*70)
+    run_extraction(
+        pdf_path=str(local_solution_pdf),
+        output_base_dir=str(staging_root),
+        start_page=SOLUTION_START_PAGE,
+        bilingual=(MODE == "bilingual"),
+        prefix=SOLUTION_PREFIX
+    )
+
+# ============================================================
+# BUILD XLSX FILE(S)
+# ============================================================
+print("\n🧾 Building XLSX file(s)...")
+
+if MODE == "bilingual":
+    local_eng = staging_root / "English"
+    local_hin = staging_root / "Hindi"
+
+    eng_rows = build_rows_from_folder(local_eng, "English")
+    hin_rows = build_rows_from_folder(local_hin, "Hindi")
+
+    eng_xlsx = Path("/content/Tagging_English.xlsx")
+    hin_xlsx = Path("/content/Tagging_Hindi.xlsx")
+
+    build_tagging_xlsx(eng_rows, eng_xlsx, "English")
+    build_tagging_xlsx(hin_rows, hin_xlsx, "Hindi")
+
+    print(f"✅ English XLSX created with {len(eng_rows)} rows: {eng_xlsx.name}")
+    print(f"✅ Hindi XLSX created with {len(hin_rows)} rows: {hin_xlsx.name}")
+
+else:
+    single_rows = build_rows_from_folder(staging_root, SINGLE_LANGUAGE)
+    single_xlsx = Path(f"/content/Tagging_{SINGLE_LANGUAGE}.xlsx")
+    build_tagging_xlsx(single_rows, single_xlsx, SINGLE_LANGUAGE)
+
+    print(f"✅ Single-language XLSX created with {len(single_rows)} rows: {single_xlsx.name}")
+
+# ============================================================
+# UPLOAD RESULTS TO SAME DRIVE FOLDER AS PDF
+# ============================================================
+print("\n☁️ Uploading screenshots + XLSX to Google Drive...")
+
+if MODE == "bilingual":
+    local_eng = staging_root / "English"
+    local_hin = staging_root / "Hindi"
+
+    delete_existing_pngs(english_folder_id)
+    delete_existing_pngs(hindi_folder_id)
+
+    eng_files = sorted(local_eng.glob("*.png"))
+    hin_files = sorted(local_hin.glob("*.png"))
+
+    print(f"⬆️ Uploading English screenshots: {len(eng_files)} files")
+    for i, p in enumerate(eng_files, start=1):
+        upload_file_unique(p, english_folder_id)
+        if i % 25 == 0 or i == len(eng_files):
+            print(f"   English: {i}/{len(eng_files)} uploaded")
+
+    print(f"⬆️ Uploading Hindi screenshots: {len(hin_files)} files")
+    for i, p in enumerate(hin_files, start=1):
+        upload_file_unique(p, hindi_folder_id)
+        if i % 25 == 0 or i == len(hin_files):
+            print(f"   Hindi: {i}/{len(hin_files)} uploaded")
+
+    # Upload XLSX into language folders
+    upload_file_unique(eng_xlsx, english_folder_id)
+    upload_file_unique(hin_xlsx, hindi_folder_id)
+
+    eng_link = f"https://drive.google.com/drive/folders/{english_folder_id}"
+    hin_link = f"https://drive.google.com/drive/folders/{hindi_folder_id}"
+    root_link = f"https://drive.google.com/drive/folders/{processed_folder_id}"
+
+    print("\n✅ Done.")
+    print(f"📂 Processed Screenshots: {root_link}")
+    print(f"📂 English folder        : {eng_link}")
+    print(f"📂 Hindi folder          : {hin_link}")
+
+else:
+    delete_existing_pngs(processed_folder_id)
+
+    pngs = sorted(staging_root.glob("*.png"))
+    print(f"⬆️ Uploading screenshots: {len(pngs)} files")
+    for i, p in enumerate(pngs, start=1):
+        upload_file_unique(p, processed_folder_id)
+        if i % 25 == 0 or i == len(pngs):
+            print(f"   Uploaded: {i}/{len(pngs)}")
+
+    # Upload single XLSX into Processed Screenshots folder
+    upload_file_unique(single_xlsx, processed_folder_id)
+
+    root_link = f"https://drive.google.com/drive/folders/{processed_folder_id}"
+
+    print("\n✅ Done.")
+    print(f"📂 Processed Screenshots: {root_link}")

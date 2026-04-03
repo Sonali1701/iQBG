@@ -1,0 +1,2210 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root{
+        --bg:#0b1020;
+        --panel:#131a2d;
+        --panel2:#0f1528;
+        --text:#edf1fb;
+        --muted:#9ea8c2;
+        --border:rgba(255,255,255,.12);
+        --accent:#7c5cff;
+        --accent2:#6d54ff;
+        --ok:#16a34a;
+        --danger:#ef4444;
+        --chip:#1b233a;
+        --input:#10172b;
+        --shadow:0 10px 30px rgba(0,0,0,.28);
+        --overlay:rgba(3,8,20,.58);
+        --radius:14px;
+      }
+
+      body[data-theme="light"]{
+        --bg:#f5f7fb;
+        --panel:#ffffff;
+        --panel2:#f8faff;
+        --text:#162033;
+        --muted:#5b6780;
+        --border:rgba(22,32,51,.12);
+        --accent:#6d54ff;
+        --accent2:#5c46ea;
+        --ok:#15803d;
+        --danger:#dc2626;
+        --chip:#f3f6fb;
+        --input:#ffffff;
+        --shadow:0 10px 28px rgba(27,39,71,.10);
+        --overlay:rgba(15,23,42,.18);
+      }
+
+      *{ box-sizing:border-box; }
+      html, body{ height:100%; }
+
+      body{
+        margin:0;
+        padding:14px;
+        color:var(--text);
+        font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background:
+          radial-gradient(900px 480px at 20% -10%, rgba(124,92,255,.16), transparent 58%),
+          radial-gradient(900px 520px at 90% 0%, rgba(34,197,94,.08), transparent 60%),
+          var(--bg);
+      }
+
+      .wrap{ max-width:1180px; margin:0 auto; }
+      .wrap.wide{ max-width:none; }
+
+      .app-shell{
+        display:grid;
+        gap:14px;
+      }
+
+      .nav-tabs, .sub-tabs{
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
+      }
+
+      .nav-tab, .sub-tab{
+        border:1px solid var(--border);
+        background:rgba(255,255,255,.04);
+        color:var(--text);
+        padding:10px 14px;
+        border-radius:999px;
+        font-weight:800;
+      }
+
+      .nav-tab.active, .sub-tab.active{
+        background:linear-gradient(135deg,var(--accent),var(--accent2));
+        color:#fff;
+        border-color:transparent;
+        box-shadow:0 10px 24px rgba(124,92,255,.24);
+      }
+
+      .app-section{ display:none; }
+      .app-section.active{ display:block; }
+
+      .hero{
+        display:grid;
+        grid-template-columns:1.1fr .9fr;
+        gap:14px;
+      }
+
+      .hero-card{
+        min-height:220px;
+        display:grid;
+        gap:10px;
+        align-content:start;
+      }
+
+      .hero-title{
+        font-size:28px;
+        line-height:1.05;
+        font-weight:900;
+        letter-spacing:-.03em;
+      }
+
+      .hero-copy{
+        color:var(--muted);
+        line-height:1.55;
+        max-width:62ch;
+      }
+
+      .feature-grid{
+        display:grid;
+        grid-template-columns:repeat(3, minmax(0,1fr));
+        gap:12px;
+      }
+
+      .feature-tile{
+        padding:14px;
+        border-radius:16px;
+        border:1px solid var(--border);
+        background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      }
+
+      .feature-kicker{
+        font-size:11px;
+        text-transform:uppercase;
+        letter-spacing:.12em;
+        color:var(--muted);
+        margin-bottom:8px;
+      }
+
+      .feature-title{
+        font-size:16px;
+        font-weight:800;
+        margin-bottom:6px;
+      }
+
+      .workspace-shell{
+        width:min(100%, 1500px);
+        margin:0 auto;
+      }
+
+      .workspace-frame-card{
+        padding:8px;
+        border-radius:22px;
+        border:1px solid var(--border);
+        background:linear-gradient(180deg, var(--panel), rgba(12,19,38,.95));
+        box-shadow:var(--shadow);
+      }
+
+      .workspace-frame{
+        width:100%;
+        height:calc(100vh - 170px);
+        min-height:760px;
+        border:none;
+        border-radius:16px;
+        background:#fff;
+      }
+
+      .builder-panel{ display:none; }
+      .builder-panel.active{ display:block; }
+
+      .builder-intro{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+        flex-wrap:wrap;
+        margin-bottom:12px;
+      }
+
+      @media (max-width: 980px){
+        .hero{ grid-template-columns:1fr; }
+        .feature-grid{ grid-template-columns:1fr; }
+        .workspace-frame{
+          height:calc(100vh - 210px);
+          min-height:620px;
+        }
+      }
+
+      .topbar{
+        position:sticky;
+        top:8px;
+        z-index:20;
+        margin-bottom:10px;
+      }
+
+      .topbar-card{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+        flex-wrap:wrap;
+        padding:10px 12px;
+        background:var(--panel);
+        border:1px solid var(--border);
+        border-radius:16px;
+        box-shadow:var(--shadow);
+      }
+
+      .title{
+        font-size:18px;
+        font-weight:800;
+        line-height:1.2;
+      }
+
+      .subtitle{
+        font-size:12px;
+        color:var(--muted);
+        margin-top:4px;
+      }
+
+      .toolbar, .top-actions, .action-group, .pills{
+        display:flex;
+        gap:8px;
+        align-items:center;
+        flex-wrap:wrap;
+      }
+
+      button{
+        border:none;
+        border-radius:12px;
+        padding:9px 12px;
+        cursor:pointer;
+        background:var(--chip);
+        color:var(--text);
+        font-weight:700;
+      }
+
+      button:hover{ filter:brightness(1.04); }
+      button:disabled{ opacity:.55; cursor:not-allowed; }
+
+      .primary{
+        background:linear-gradient(135deg,var(--accent),var(--accent2));
+        color:#fff;
+      }
+
+      .secondary{
+        background:linear-gradient(135deg,#22c55e,#16a34a);
+        color:#fff;
+      }
+
+      .ghost{
+        background:transparent;
+        border:1px solid var(--border);
+      }
+
+      .page-grid{
+        display:grid;
+        grid-template-columns:1.2fr .8fr;
+        gap:12px;
+      }
+
+      @media (max-width: 980px){
+        .page-grid{ grid-template-columns:1fr; }
+      }
+
+      .section-stack{ display:grid; gap:12px; }
+
+      .card{
+        background:linear-gradient(180deg, var(--panel), var(--panel2));
+        border:1px solid var(--border);
+        border-radius:16px;
+        box-shadow:var(--shadow);
+        padding:12px;
+      }
+
+      .sticky-actions{
+        position:sticky;
+        top:76px;
+        z-index:10;
+      }
+
+      @media (max-width: 980px){
+        .sticky-actions{ position:static; }
+      }
+
+      .compact-grid{
+        display:grid;
+        grid-template-columns:repeat(4, minmax(0,1fr));
+        gap:10px;
+      }
+
+      .compact-grid-3{
+        display:grid;
+        grid-template-columns:repeat(3, minmax(0,1fr));
+        gap:10px;
+      }
+
+      .compact-grid-2{
+        display:grid;
+        grid-template-columns:repeat(2, minmax(0,1fr));
+        gap:10px;
+      }
+
+      @media (max-width: 980px){
+        .compact-grid, .compact-grid-3{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+      }
+
+      @media (max-width: 650px){
+        .compact-grid, .compact-grid-3, .compact-grid-2{ grid-template-columns:1fr; }
+      }
+
+      label{
+        display:block;
+        font-size:12px;
+        color:var(--muted);
+        margin-bottom:5px;
+        font-weight:700;
+      }
+
+      .inline-label{
+        display:flex;
+        align-items:center;
+        gap:8px;
+        color:var(--text);
+        font-size:13px;
+        font-weight:700;
+      }
+
+      input[type="text"], input[type="number"], select, textarea{
+        width:100%;
+        min-height:40px;
+        padding:9px 11px;
+        border-radius:12px;
+        border:1px solid var(--border);
+        background:var(--input);
+        color:var(--text);
+        outline:none;
+      }
+
+      textarea{
+        resize:vertical;
+        min-height:72px;
+      }
+
+      input:focus, select:focus, textarea:focus{
+        border-color:var(--accent);
+        box-shadow:0 0 0 3px rgba(124,92,255,.18);
+      }
+
+      input[readonly]{ opacity:.9; }
+
+      .hint{
+        color:var(--muted);
+        font-size:11.5px;
+        line-height:1.35;
+      }
+
+      .errorText{
+        color:var(--danger);
+        font-size:12px;
+        margin-top:5px;
+        display:none;
+      }
+
+      .invalid{
+        border-color:rgba(239,68,68,.8)!important;
+        box-shadow:0 0 0 3px rgba(239,68,68,.14)!important;
+      }
+
+      .pill, .badge{
+        display:inline-flex;
+        align-items:center;
+        gap:6px;
+        padding:6px 10px;
+        border:1px solid var(--border);
+        border-radius:999px;
+        background:var(--chip);
+        font-size:12px;
+      }
+
+      .pill{ color:var(--muted); }
+      .badge{ color:var(--text); }
+
+      details{
+        border:1px solid var(--border);
+        border-radius:14px;
+        overflow:hidden;
+        background:var(--panel);
+      }
+
+      summary{
+        list-style:none;
+        cursor:pointer;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:10px;
+        padding:10px 12px;
+        font-weight:800;
+        font-size:13px;
+      }
+
+      summary::-webkit-details-marker{ display:none; }
+
+      .caret{
+        transition:transform .16s ease;
+        color:var(--muted);
+      }
+
+      details[open] .caret{ transform:rotate(180deg); }
+
+      .details-body{
+        padding:0 12px 12px 12px;
+        border-top:1px solid var(--border);
+      }
+
+      .sheetBar, .proj-box, .topicBox{
+        display:flex;
+        flex-wrap:wrap;
+        gap:8px;
+        padding:10px;
+        border:1px solid var(--border);
+        border-radius:12px;
+        background:var(--chip);
+        max-height:220px;
+        overflow:auto;
+      }
+
+      .chip, .proj-item, .topicItem{
+        display:flex;
+        gap:8px;
+        align-items:center;
+        padding:6px 9px;
+        border:1px solid var(--border);
+        border-radius:999px;
+        background:var(--panel2);
+        font-size:12px;
+      }
+
+      .chip input, .proj-item input, .topicItem input{
+        width:auto;
+        margin:0;
+      }
+
+      .chapterList{
+        display:grid;
+        gap:8px;
+        margin-top:10px;
+      }
+
+      .chapterRow{
+        border:1px solid var(--border);
+        border-radius:12px;
+        background:var(--chip);
+        padding:10px;
+      }
+
+      .chapterHead{
+        display:grid;
+        grid-template-columns:1fr 100px auto;
+        gap:10px;
+        align-items:start;
+      }
+
+      @media (max-width: 650px){
+        .chapterHead{ grid-template-columns:1fr; }
+      }
+
+      .chapterLeft{
+        display:flex;
+        gap:10px;
+        align-items:flex-start;
+      }
+
+      .chapterName{
+        font-size:13px;
+        font-weight:800;
+      }
+
+      .chapterMeta{
+        font-size:11.5px;
+        color:var(--muted);
+        margin-top:2px;
+      }
+
+      .weightBox input{
+        text-align:center;
+      }
+
+      .topicPane{
+        display:none;
+        margin-top:10px;
+        padding-top:10px;
+        border-top:1px dashed var(--border);
+      }
+
+      .topicPane.open{ display:block; }
+
+      .status{
+        margin-top:10px;
+        padding:12px;
+        border-radius:14px;
+        border:1px solid var(--border);
+        background:var(--chip);
+        font-size:12.5px;
+        line-height:1.45;
+        display:none;
+      }
+
+      .status.ok{ display:block; border-color:rgba(22,163,74,.35); }
+      .status.err{ display:block; border-color:rgba(239,68,68,.35); }
+
+      .status a{
+        color:var(--accent);
+        text-decoration:none;
+        font-weight:700;
+      }
+
+      .mini-stat-grid{
+        display:grid;
+        grid-template-columns:repeat(3,1fr);
+        gap:10px;
+      }
+
+      .stat{
+        border:1px solid var(--border);
+        border-radius:14px;
+        padding:10px;
+        background:var(--chip);
+      }
+
+      .stat .k{
+        font-size:11px;
+        color:var(--muted);
+      }
+
+      .stat .v{
+        font-size:18px;
+        font-weight:800;
+        margin-top:4px;
+      }
+
+      .divider{
+        height:1px;
+        background:var(--border);
+        margin:10px 0;
+      }
+
+      .spinner{
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+      }
+
+      .dot{
+        width:10px;
+        height:10px;
+        border-radius:50%;
+        background:#fff;
+        box-shadow:0 0 0 0 rgba(255,255,255,.55);
+        animation:pulse 1.2s infinite;
+      }
+
+      @keyframes pulse{
+        0%{ box-shadow:0 0 0 0 rgba(255,255,255,.55); }
+        70%{ box-shadow:0 0 0 12px rgba(255,255,255,0); }
+        100%{ box-shadow:0 0 0 0 rgba(255,255,255,0); }
+      }
+
+      .overlay{
+        position:fixed;
+        inset:0;
+        background:var(--overlay);
+        opacity:0;
+        pointer-events:none;
+        transition:opacity .18s ease;
+        z-index:60;
+      }
+
+      .overlay.open{
+        opacity:1;
+        pointer-events:auto;
+      }
+
+      .drawer{
+        position:fixed;
+        top:0;
+        right:0;
+        height:100%;
+        width:760px;
+        max-width:100vw;
+        background:var(--panel);
+        border-left:1px solid var(--border);
+        box-shadow:-20px 0 40px rgba(0,0,0,.22);
+        transform:translateX(100%);
+        transition:transform .18s ease;
+        z-index:70;
+        display:flex;
+        flex-direction:column;
+        visibility:hidden;
+      }
+
+      .drawer.open{
+        transform:translateX(0);
+        visibility:visible;
+      }
+
+      .drawer-head{
+        padding:12px;
+        border-bottom:1px solid var(--border);
+        display:flex;
+        justify-content:space-between;
+        gap:10px;
+        align-items:flex-start;
+      }
+
+      .drawer-body{
+        padding:12px;
+        overflow:auto;
+        display:grid;
+        gap:12px;
+      }
+
+      .searchBox{
+        border:1px solid var(--border);
+        border-radius:14px;
+        padding:10px;
+        background:var(--chip);
+      }
+
+      .previewList{
+        display:grid;
+        gap:10px;
+      }
+
+      .previewCard{
+        border:1px solid var(--border);
+        border-radius:14px;
+        background:var(--chip);
+        padding:10px;
+      }
+
+      .previewCard.off{
+        opacity:.58;
+        border-style:dashed;
+      }
+
+      .previewHead{
+        display:flex;
+        justify-content:space-between;
+        gap:10px;
+        align-items:flex-start;
+      }
+
+      .previewTitle{
+        font-size:14px;
+        font-weight:800;
+      }
+
+      .previewMeta{
+        display:flex;
+        flex-wrap:wrap;
+        gap:6px;
+        margin:8px 0;
+      }
+
+      .previewText{
+        white-space:pre-wrap;
+        font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size:12px;
+        line-height:1.45;
+        border:1px solid var(--border);
+        border-radius:12px;
+        padding:10px;
+        background:var(--panel2);
+        max-height:220px;
+        overflow:auto;
+      }
+
+      .previewMedia{
+        border:1px solid var(--border);
+        border-radius:12px;
+        padding:8px;
+        background:var(--panel2);
+        overflow:auto;
+      }
+
+      .previewImage{
+        display:block;
+        width:auto;
+        max-width:100%;
+        height:auto;
+        max-height:var(--preview-max-height, 520px);
+        border-radius:10px;
+        background:#fff;
+        object-fit:contain;
+        object-position:center top;
+        margin:0 auto;
+      }
+
+      .previewMedia.rich .previewImage{
+        max-height:var(--preview-max-height, 700px);
+      }
+
+      .muted{ color:var(--muted); }
+    </style>
+  </head>
+
+  <body data-theme="dark">
+    <div class="app-shell">
+    <div class="wrap">
+      <div class="topbar">
+        <div class="topbar-card">
+          <div>
+            <div class="title">Paper Production Workspace</div>
+            <div class="subtitle">Home • Final Zip Package • Paper Builder</div>
+          </div>
+
+          <div class="top-actions">
+            <button id="themeBtn" class="ghost" type="button" onclick="toggleTheme()">🌙 Dark</button>
+            <button class="ghost" type="button" onclick="resetForm()">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="nav-tabs">
+          <button id="topTab_home" class="nav-tab active" type="button" onclick="switchTopTab('home')">Home</button>
+          <button id="topTab_final" class="nav-tab" type="button" onclick="switchTopTab('final')">Final Zip Package</button>
+          <button id="topTab_builder" class="nav-tab" type="button" onclick="switchTopTab('builder')">Paper Builder</button>
+        </div>
+      </div>
+    </div>
+
+    <section id="section_home" class="app-section active">
+      <div class="wrap">
+        <div class="hero">
+          <div class="card hero-card">
+            <div class="feature-kicker">Production Ready</div>
+            <div class="hero-title">One workspace for draft papers, final packages, and source-specific builders.</div>
+            <div class="hero-copy">
+              Use the inbuilt word-source builder for your Apps Script workflow, or open the hosted base-project experience for final package operations without leaving this website.
+            </div>
+            <div class="toolbar">
+              <button class="primary" type="button" onclick="switchTopTab('builder'); switchBuilderMode('word');">Open Inbuilt Word Builder</button>
+              <button class="ghost" type="button" onclick="switchTopTab('final');">Open Final Zip Package</button>
+            </div>
+          </div>
+
+          <div class="card hero-card">
+            <div class="feature-kicker">Workspace Modes</div>
+            <div class="feature-grid">
+              <div class="feature-tile">
+                <div class="feature-title">Home</div>
+                <div class="hint">Launch the right workflow quickly and guide users clearly.</div>
+              </div>
+              <div class="feature-tile">
+                <div class="feature-title">Final Zip Package</div>
+                <div class="hint">Hosted base project embedded full-screen so it feels native to this platform.</div>
+              </div>
+              <div class="feature-tile">
+                <div class="feature-title">Paper Builder</div>
+                <div class="hint">Choose between PDF source flow and inbuilt word-source flow.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="section_final" class="app-section">
+      <div class="workspace-shell">
+        <div class="workspace-frame-card">
+          <iframe id="finalPackageFrame" class="workspace-frame" src="https://paper2-assets.vercel.app/" title="Final Zip Package Workspace" loading="lazy" allow="fullscreen"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <section id="section_builder" class="app-section">
+      <div class="wrap">
+        <div class="card" style="margin-bottom:12px;">
+          <div class="builder-intro">
+            <div>
+              <div style="font-size:18px; font-weight:800;">Paper Builder</div>
+              <div class="hint">Choose the builder mode that matches your source format.</div>
+            </div>
+
+            <div class="sub-tabs">
+              <button id="builderTab_pdf" class="sub-tab" type="button" onclick="switchBuilderMode('pdf')">Using PDF</button>
+              <button id="builderTab_word" class="sub-tab active" type="button" onclick="switchBuilderMode('word')">Using Inbuilt Word Source</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="builderPanel_pdf" class="builder-panel">
+          <div class="card">
+            <div style="font-size:18px; font-weight:800; margin-bottom:8px;">PDF Source Workflow</div>
+            <div class="hero-copy" style="max-width:none;">
+              The PDF-based workflow is powered by the hosted base project. Open it in the full workspace tab for the complete package-generation experience.
+            </div>
+            <div class="toolbar" style="margin-top:12px;">
+              <button class="primary" type="button" onclick="switchTopTab('final')">Open Full PDF Workspace</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="builderPanel_word" class="builder-panel active">
+
+      <div class="page-grid">
+        <div class="section-stack">
+          <div class="card sticky-actions">
+            <div class="toolbar" style="justify-content:space-between;">
+              <div class="pills">
+                <span class="pill" id="summaryPill1">Chapters: —</span>
+                <span class="pill" id="summaryPill2">Weight: 0 / 100</span>
+                <span class="pill" id="summaryPill3">Total Q: 0</span>
+              </div>
+
+              <div class="action-group">
+                <button id="previewBtn" class="primary" type="button" onclick="buildPreview()">Build Preview</button>
+                <button id="generateBtn" class="secondary" type="button" onclick="generateFinalPdf()" disabled>Generate Final PDF</button>
+              </div>
+            </div>
+
+            <div id="status" class="status"></div>
+          </div>
+
+          <div class="card">
+            <div class="compact-grid">
+              <div>
+                <label for="paperName">Paper Name *</label>
+                <input id="paperName" type="text" placeholder="AITS 2026 Botany Test-1" />
+                <div class="errorText" id="err_paperName">Paper Name is required.</div>
+              </div>
+
+              <div>
+                <label for="className">Class *</label>
+                <select id="className">
+                  <option value="11">11</option>
+                  <option value="12">12</option>
+                  <option value="11+12">11+12</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="subject">Subject *</label>
+                <input id="subject" type="text" placeholder="Botany" />
+                <div class="errorText" id="err_subject">Subject is required.</div>
+              </div>
+
+              <div>
+                <label for="chapterSearch">Search Chapters</label>
+                <input id="chapterSearch" type="text" placeholder="Filter chapters..." oninput="filterChapters()" />
+              </div>
+            </div>
+
+            <div style="margin-top:10px;">
+              <label>Source Sheets *</label>
+              <div id="sheetBar" class="sheetBar"></div>
+              <div class="errorText" id="err_sources">Select at least one source sheet.</div>
+            </div>
+          </div>
+
+          <details open>
+            <summary>
+              <span>Chapters & Topic Selection</span>
+              <span class="caret">▼</span>
+            </summary>
+            <div class="details-body">
+              <div class="toolbar" style="margin-top:10px;">
+                <button class="ghost" type="button" onclick="loadChapters()">Reload Chapters</button>
+                <button type="button" onclick="selectAllChapters(true)">Select All</button>
+                <button type="button" onclick="selectAllChapters(false)">Clear All</button>
+                <span class="pill" id="chaptersInfo">Chapters: —</span>
+                <span class="pill" id="weightTotalPill">Weight total: 0 / 100</span>
+              </div>
+
+              <div class="hint" id="topicsStatus" style="margin-top:8px;"></div>
+              <div class="errorText" id="err_chapters">Select at least one chapter.</div>
+              <div class="errorText" id="err_weights">Total chapter weightage must be exactly 100.</div>
+
+              <div class="chapterList" id="chapterList"></div>
+            </div>
+          </details>
+
+          <div class="compact-grid-2">
+            <details open>
+              <summary>
+                <span>Difficulty Split</span>
+                <span class="caret">▼</span>
+              </summary>
+              <div class="details-body">
+                <div class="compact-grid-2" style="margin-top:10px;">
+                  <div>
+                    <label for="easy">Easy</label>
+                    <input id="easy" type="number" min="0" step="1" />
+                  </div>
+                  <div>
+                    <label for="medium">Medium</label>
+                    <input id="medium" type="number" min="0" step="1" />
+                  </div>
+                  <div>
+                    <label for="hard">Hard</label>
+                    <input id="hard" type="number" min="0" step="1" />
+                  </div>
+                  <div>
+                    <label for="totalQuestions">Total</label>
+                    <input id="totalQuestions" type="number" readonly />
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details open>
+              <summary>
+                <span>Options</span>
+                <span class="caret">▼</span>
+              </summary>
+              <div class="details-body">
+                <div class="compact-grid-2" style="margin-top:10px;">
+                  <label class="inline-label"><input id="uniqueOnly" type="checkbox" checked /> Unique only</label>
+                  <label class="inline-label"><input id="shuffleOrder" type="checkbox" /> Shuffle final order</label>
+                  <label class="inline-label"><input id="includeHints" type="checkbox" checked /> Include hints</label>
+                  <label class="inline-label"><input id="includeVideoLinks" type="checkbox" checked /> Video links in tagging</label>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <details>
+            <summary>
+              <span>Question Type Split</span>
+              <span class="caret">▼</span>
+            </summary>
+            <div class="details-body">
+              <div class="compact-grid-3" style="margin-top:10px;">
+                <div><label>Single Choice MCQ</label><input class="qtypeCount" data-qtype="Single Choice MCQ" type="number" min="0" step="1" /></div>
+                <div><label>Match the column</label><input class="qtypeCount" data-qtype="Match the column" type="number" min="0" step="1" /></div>
+                <div><label>Statement based</label><input class="qtypeCount" data-qtype="Statement based" type="number" min="0" step="1" /></div>
+                <div><label>Multi Statement Based</label><input class="qtypeCount" data-qtype="Multi Statement Based" type="number" min="0" step="1" /></div>
+                <div><label>Assertion and Reason</label><input class="qtypeCount" data-qtype="Assertion and Reason" type="number" min="0" step="1" /></div>
+                <div><label>Diagram based</label><input class="qtypeCount" data-qtype="Diagram based" type="number" min="0" step="1" /></div>
+              </div>
+
+              <div class="toolbar" style="margin-top:10px;">
+                <button type="button" class="ghost" onclick="resetTypeDefaults()">Reset Type Defaults</button>
+                <span class="pill" id="qtypeHintPill">Type total: —</span>
+              </div>
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span>Exclude Projects</span>
+              <span class="caret">▼</span>
+            </summary>
+            <div class="details-body">
+              <div class="proj-box" style="margin-top:10px;">
+                <div class="proj-item"><input type="checkbox" class="proj" value="Milestone" id="p_milestone"><label for="p_milestone">Milestone</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="VPRP" id="p_vprp"><label for="p_vprp">VPRP</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="NSAT" id="p_nsat"><label for="p_nsat">NSAT</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="FTP" id="p_ftp"><label for="p_ftp">FTP</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="FRT" id="p_frt"><label for="p_frt">FRT</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="AIR" id="p_air"><label for="p_air">AIR</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="AITS" id="p_aits"><label for="p_aits">AITS</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="Real Test" id="p_real"><label for="p_real">Real Test</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="Backlog killer Series" id="p_backlog"><label for="p_backlog">Backlog killer Series</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="PW Universe" id="p_pw"><label for="p_pw">PW Universe</label></div>
+                <div class="proj-item"><input type="checkbox" class="proj" value="Mission 100 Test Series" id="p_m100"><label for="p_m100">Mission 100 Test Series</label></div>
+              </div>
+
+              <div class="toolbar" style="margin-top:10px;">
+                <button type="button" class="ghost" onclick="selectAllProjects(true)">Select All</button>
+                <button type="button" class="ghost" onclick="selectAllProjects(false)">Clear All</button>
+              </div>
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span>DTP Handoff</span>
+              <span class="caret">▼</span>
+            </summary>
+            <div class="details-body">
+              <div class="compact-grid-2" style="margin-top:10px;">
+                <div>
+                  <label for="dtpQids">Final QIDs</label>
+                  <input id="dtpQids" type="text" placeholder="QID001,QID002,QID003..." />
+                  <div class="hint">Create info.txt after final generation.</div>
+                </div>
+
+                <div>
+                  <label>&nbsp;</label>
+                  <div class="toolbar">
+                    <button type="button" class="primary" onclick="createInfoTxt()">Create info.txt</button>
+                    <div id="infoOut" class="hint"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="section-stack">
+          <div class="card">
+            <div style="font-weight:800; font-size:14px; margin-bottom:10px;">At a glance</div>
+
+            <div class="mini-stat-grid">
+              <div class="stat">
+                <div class="k">Selected Chapters</div>
+                <div class="v" id="statChapters">0</div>
+              </div>
+              <div class="stat">
+                <div class="k">Weight Total</div>
+                <div class="v" id="statWeight">0</div>
+              </div>
+              <div class="stat">
+                <div class="k">Question Total</div>
+                <div class="v" id="statTotalQ">0</div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="hint">
+              Workflow: Fill basics → Select chapters → Build Preview → Review in drawer → Generate Final PDF
+            </div>
+          </div>
+        </div>
+      </div>
+        </div>
+      </div>
+    </section>
+    </div>
+
+    <div id="overlay" class="overlay" onclick="closePreviewDrawer()"></div>
+
+    <div id="previewDrawer" class="drawer">
+      <div class="drawer-head">
+        <div>
+          <div style="font-weight:800; font-size:15px;">Preview & Selection</div>
+          <div class="hint">Select, deselect, reorder, replace, or add questions.</div>
+        </div>
+
+        <div class="toolbar">
+          <span class="pill" id="previewSummaryPill">Included: —</span>
+          <button class="ghost" type="button" onclick="closePreviewDrawer()">Close</button>
+        </div>
+      </div>
+
+      <div class="drawer-body">
+        <div class="searchBox">
+          <div class="toolbar" style="justify-content:space-between;">
+            <div class="pills">
+              <span class="pill" id="previewSummaryPill2">Easy/Medium/Hard: —</span>
+              <span class="pill" id="replaceModePill">Mode: Add</span>
+            </div>
+
+            <div class="toolbar">
+              <button class="ghost" type="button" onclick="setAllPreviewSelection(true)">Select all</button>
+              <button class="ghost" type="button" onclick="setAllPreviewSelection(false)">Clear all</button>
+            </div>
+          </div>
+
+          <div id="previewNotes" class="hint" style="margin-top:8px;"></div>
+        </div>
+
+        <div id="replacePanel" class="searchBox" style="display:block;">
+          <div style="font-weight:800; font-size:13px; margin-bottom:10px;">Add / Replace Questions</div>
+
+          <div class="compact-grid-3">
+            <div>
+              <label for="searchChapter">Chapter</label>
+              <select id="searchChapter" onchange="renderSearchTopicOptions()">
+                <option value="">Any chapter</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="searchDifficulty">Difficulty</label>
+              <select id="searchDifficulty">
+                <option value="">Any difficulty</option>
+                <option value="1">Easy</option>
+                <option value="2">Medium</option>
+                <option value="3">Hard</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="searchQuestionType">Type</label>
+              <select id="searchQuestionType">
+                <option value="">Any type</option>
+                <option value="Single Choice MCQ">Single Choice MCQ</option>
+                <option value="Match the column">Match the column</option>
+                <option value="Statement based">Statement based</option>
+                <option value="Multi Statement Based">Multi Statement Based</option>
+                <option value="Assertion and Reason">Assertion and Reason</option>
+                <option value="Diagram based">Diagram based</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="searchTopicId">Topic</label>
+              <select id="searchTopicId">
+                <option value="">Any topic</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="searchContains">Contains text</label>
+              <input id="searchContains" type="text" placeholder="optional text filter" />
+            </div>
+
+            <div>
+              <label for="searchLimit">Results</label>
+              <input id="searchLimit" type="number" min="1" max="50" value="12" />
+            </div>
+          </div>
+
+          <div class="toolbar" style="margin-top:10px;">
+            <button type="button" class="primary" onclick="searchCandidates()">Search Candidates</button>
+            <button type="button" class="ghost" onclick="clearReplaceMode()">Clear Replace Target</button>
+          </div>
+
+          <div id="candidateStatus" class="hint" style="margin-top:8px;"></div>
+          <div id="candidateResults" class="previewList" style="margin-top:10px;"></div>
+        </div>
+
+        <div id="previewList" class="previewList"></div>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const TOP_TABS = ["home","final","builder"];
+      const BUILDER_MODES = ["pdf","word"];
+
+      let LOADED_CHAPTERS = [];
+      let SOURCE_SHEETS = [];
+      let loadTimer = null;
+
+      let typeAutoMode = true;
+
+      let CURRENT_PREVIEW_BASE_REQ = null;
+      let CURRENT_PREVIEW_ITEMS = [];
+      let CURRENT_PREVIEW_NOTES = [];
+      let LAST_CANDIDATES = [];
+      let REPLACE_TARGET_INDEX = null;
+
+      let LAST_PLAN_FILE_ID = "";
+      let LAST_OUTPUT_FOLDER_ID = "";
+      let LAST_REQ_SNAPSHOT = null;
+
+      const DEFAULT_TOTAL = 45;
+      const DEFAULT_DIFFICULTY = { easy: 15, medium: 25, hard: 5 };
+      const DEFAULT_TYPES = {
+        "Single Choice MCQ": 25,
+        "Match the column": 5,
+        "Statement based": 5,
+        "Multi Statement Based": 5,
+        "Assertion and Reason": 3,
+        "Diagram based": 2
+      };
+
+      function escapeHtml(str){
+        return String(str).replace(/[&<>"']/g, s => ({
+          "&":"&amp;",
+          "<":"&lt;",
+          ">":"&gt;",
+          '"':"&quot;",
+          "'":"&#039;"
+        }[s]));
+      }
+
+      function escapeAttr(str){
+        return String(str).replace(/\\/g, "\\\\").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+      }
+
+      function cssEscape(str){
+        return String(str).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      }
+
+      function renderPreviewMedia(item){
+        const text = item && item.previewText ? item.previewText : "";
+        const previewKind = String((item && item.previewKind) || "");
+        const qType = String((item && item.questionType) || "");
+        const qTypeNorm = qType.trim().toLowerCase();
+        const isRichLayout = previewKind === "rich";
+        const hasRealDims = Number(item && item.previewImageWidth) > 0 && Number(item && item.previewImageHeight) > 0;
+
+        if (item && item.previewImageDataUrl) {
+          const isMatch = qTypeNorm.includes("match");
+          const isStatement = qTypeNorm.includes("statement") || qTypeNorm.includes("assertion");
+          const isMcq = qTypeNorm.includes("single choice");
+          let className = "simple";
+          let maxHeight = 520;
+
+          if (isRichLayout || isMatch) {
+            className = "rich";
+            maxHeight = 760;
+          } else if (isStatement) {
+            className = "simple";
+            maxHeight = 620;
+          } else if (isMcq) {
+            className = "simple";
+            maxHeight = 520;
+          }
+
+          if (hasRealDims) {
+            const ratio = Number(item.previewImageHeight) / Number(item.previewImageWidth);
+            if (className === "rich") {
+              maxHeight = Math.max(220, Math.min(760, Math.round(720 * ratio)));
+            } else {
+              maxHeight = Math.max(260, Math.min(680, Math.round(720 * ratio)));
+            }
+          } else {
+            const lines = Math.max(4, Math.min(20, String(text).split(/\n+/).filter(Boolean).length || 4));
+            if (className === "rich") {
+              maxHeight = Math.max(340, Math.min(640, 160 + lines * 24));
+            } else {
+              maxHeight = Math.max(320, Math.min(620, 180 + lines * 22));
+            }
+          }
+          return `
+            <div class="previewMedia ${className}" style="--preview-max-height:${maxHeight}px;">
+              <img class="previewImage" src="${item.previewImageDataUrl}" alt="Question preview" />
+            </div>
+          `;
+        }
+
+        return `<div class="previewText">${escapeHtml(text || "[No preview]")}</div>`;
+      }
+
+      function switchTopTab(tab){
+        TOP_TABS.forEach(name => {
+          const btn = $("topTab_" + name);
+          const section = $("section_" + name);
+          if (btn) btn.classList.toggle("active", name === tab);
+          if (section) section.classList.toggle("active", name === tab);
+        });
+      }
+
+      function switchBuilderMode(mode){
+        BUILDER_MODES.forEach(name => {
+          const btn = $("builderTab_" + name);
+          const panel = $("builderPanel_" + name);
+          if (btn) btn.classList.toggle("active", name === mode);
+          if (panel) panel.classList.toggle("active", name === mode);
+        });
+        if (!$("section_builder") || !$("section_builder").classList.contains("active")){
+          switchTopTab("builder");
+        }
+      }
+
+      function setInvalid(id, bad, errId){
+        const el = $(id);
+        const er = $(errId);
+        if(el){
+          if(bad) el.classList.add("invalid");
+          else el.classList.remove("invalid");
+        }
+        if(er) er.style.display = bad ? "block" : "none";
+      }
+
+      function setStatus(kind, html){
+        const st = $("status");
+        st.classList.remove("ok","err");
+        st.classList.add(kind === "ok" ? "ok" : "err");
+        st.style.display = "block";
+        st.innerHTML = html;
+      }
+
+      function setLoading(which, isLoading){
+        const btn = $(which);
+        if(!btn) return;
+
+        btn.disabled = isLoading;
+        btn.innerHTML = isLoading
+          ? `<span class="spinner"><span class="dot"></span>${which==="previewBtn" ? "Building Preview" : "Generating PDF"}</span>`
+          : (which==="previewBtn" ? "Build Preview" : "Generate Final PDF");
+      }
+
+      function syncTotal(){
+        const e = Number($("easy").value || 0);
+        const m = Number($("medium").value || 0);
+        const h = Number($("hard").value || 0);
+        const sum = e + m + h;
+
+        $("totalQuestions").value = String(sum);
+        $("summaryPill3").textContent = `Total Q: ${sum}`;
+        $("statTotalQ").textContent = String(sum);
+
+        if (typeAutoMode) rebalanceTypesToTotal(sum);
+        updateTypeHint();
+      }
+
+      function rebalanceTypesToTotal(total){
+        total = Math.max(0, Math.floor(total || 0));
+        const keys = Object.keys(DEFAULT_TYPES);
+        const baseSum = keys.reduce((s, k) => s + DEFAULT_TYPES[k], 0) || 1;
+
+        const alloc = {};
+        let used = 0;
+        const fracs = [];
+
+        keys.forEach(k => {
+          const raw = total * (DEFAULT_TYPES[k] / baseSum);
+          const base = Math.floor(raw);
+          alloc[k] = base;
+          used += base;
+          fracs.push({k, f: raw - base});
+        });
+
+        let left = total - used;
+        fracs.sort((a,b) => b.f - a.f);
+        for (let i=0; i<fracs.length && left>0; i++){
+          alloc[fracs[i].k] += 1;
+          left--;
+        }
+
+        document.querySelectorAll(".qtypeCount").forEach(inp => {
+          const type = inp.dataset.qtype;
+          inp.value = String(alloc[type] || 0);
+        });
+      }
+
+      function resetTypeDefaults(){
+        typeAutoMode = true;
+        rebalanceTypesToTotal(Number($("totalQuestions").value || DEFAULT_TOTAL));
+        updateTypeHint();
+      }
+
+      function onTypeManualEdit(){
+        typeAutoMode = false;
+        updateTypeHint();
+      }
+
+      function getQuestionTypeCounts(){
+        const obj = {};
+        document.querySelectorAll(".qtypeCount").forEach(inp => {
+          const type = inp.dataset.qtype;
+          const n = Number(inp.value || 0);
+          if(n > 0) obj[type] = n;
+        });
+        return obj;
+      }
+
+      function getQuestionTypeTotal(){
+        let t = 0;
+        document.querySelectorAll(".qtypeCount").forEach(inp => {
+          const n = Number(inp.value || 0);
+          if(n > 0) t += n;
+        });
+        return t;
+      }
+
+      function updateTypeHint(){
+        const t = getQuestionTypeTotal();
+        const ft = Number($("totalQuestions").value || 0);
+        $("qtypeHintPill").textContent = `Type total: ${t} • Total: ${ft}` + (t===ft ? "" : " (best-effort)");
+      }
+
+      function loadSourceSheets(){
+        google.script.run
+          .withSuccessHandler(list => {
+            SOURCE_SHEETS = Array.isArray(list) ? list : [];
+            renderSourceSheets();
+          })
+          .withFailureHandler(err => {
+            SOURCE_SHEETS = [];
+            renderSourceSheets();
+            setStatus("err", "Error loading source sheets: " + escapeHtml(err && err.message ? err.message : String(err)));
+          })
+          .getAvailableSourceSheets();
+      }
+
+      function renderSourceSheets(){
+        const bar = $("sheetBar");
+        bar.innerHTML = "";
+
+        if(!SOURCE_SHEETS.length){
+          bar.innerHTML = `<span class="pill">No source sheets detected</span>`;
+          return;
+        }
+
+        const preferred = SOURCE_SHEETS.includes("AITS+Real Test") ? "AITS+Real Test" : SOURCE_SHEETS[0];
+
+        SOURCE_SHEETS.forEach((name, idx) => {
+          const id = `src_${idx}`;
+          const chip = document.createElement("label");
+          chip.className = "chip";
+          chip.setAttribute("for", id);
+          chip.innerHTML = `
+            <input type="checkbox" class="srcSheet" id="${id}" value="${escapeAttr(name)}" ${name===preferred ? "checked" : ""}/>
+            <span>${escapeHtml(name)}</span>
+          `;
+          bar.appendChild(chip);
+        });
+      }
+
+      function getSelectedSourceSheets(){
+        return Array.from(document.querySelectorAll(".srcSheet:checked")).map(cb => cb.value);
+      }
+
+      function selectAllProjects(flag){
+        document.querySelectorAll(".proj").forEach(cb => cb.checked = !!flag);
+      }
+
+      function getSelectedProjects(){
+        return Array.from(document.querySelectorAll(".proj:checked")).map(cb => cb.value);
+      }
+
+      function scheduleLoadChapters(){
+        if(loadTimer) clearTimeout(loadTimer);
+        loadTimer = setTimeout(loadChapters, 400);
+      }
+
+      function loadChapters(){
+        const cls = $("className").value.trim();
+        const sub = $("subject").value.trim();
+
+        if(!cls || !sub){
+          $("topicsStatus").textContent = "Enter Class and Subject to load chapters.";
+          return;
+        }
+
+        $("topicsStatus").textContent = "Loading chapters & topics…";
+
+        google.script.run
+          .withSuccessHandler(res => {
+            LOADED_CHAPTERS = (res && res.chapters) ? res.chapters : [];
+            renderChapterList(LOADED_CHAPTERS);
+            renderSearchChapterOptions();
+          })
+          .withFailureHandler(err => {
+            LOADED_CHAPTERS = [];
+            renderChapterList([]);
+            renderSearchChapterOptions();
+            $("topicsStatus").textContent = "Error: " + (err && err.message ? err.message : String(err));
+          })
+          .getTopicsForChapters({
+            className: cls,
+            subject: sub,
+            chapters: []
+          });
+      }
+
+      function renderChapterList(chapters){
+        const box = $("chapterList");
+        box.innerHTML = "";
+        $("chaptersInfo").textContent = "Chapters: " + (chapters.length ? chapters.length : "—");
+
+        if(!chapters.length){
+          $("topicsStatus").textContent = "No chapters found.";
+          updateWeightTotal();
+          refreshRightSummary();
+          return;
+        }
+
+        $("topicsStatus").textContent = "Select chapter(s). Topics are optional. Weightage total must be 100.";
+
+        chapters.forEach((ch, idx) => {
+          const row = document.createElement("div");
+          row.className = "chapterRow";
+          row.dataset.chapter = ch.chapterName;
+
+          const topics = Array.isArray(ch.topics) ? ch.topics : [];
+
+          row.innerHTML = `
+            <div class="chapterHead">
+              <div class="chapterLeft">
+                <input type="checkbox" class="chCb" id="ch_${idx}" onchange="toggleChapter('${escapeAttr(ch.chapterName)}', this.checked); updateWeightTotal();" />
+                <div>
+                  <div class="chapterName">${escapeHtml(ch.chapterName)}</div>
+                  <div class="chapterMeta">Topics: ${topics.length}</div>
+                </div>
+              </div>
+
+              <div class="weightBox">
+                <label>Weight</label>
+                <input type="number" min="0" max="100" step="1" value="0" class="chWeight" oninput="updateWeightTotal()" />
+              </div>
+
+              <div class="toolbar" style="justify-content:flex-end;">
+                <button type="button" class="ghost" onclick="toggleChapter('${escapeAttr(ch.chapterName)}', true)">Topics</button>
+              </div>
+            </div>
+
+            <div class="topicPane" id="tp_${idx}">
+              <div class="toolbar" style="margin-bottom:8px;">
+                <button type="button" class="ghost" onclick="selectAllTopics('${escapeAttr(ch.chapterName)}', true)">Select all topics</button>
+                <button type="button" class="ghost" onclick="selectAllTopics('${escapeAttr(ch.chapterName)}', false)">Clear topics</button>
+              </div>
+
+              <div class="topicBox">
+                ${topics.map(t => `
+                  <div class="topicItem">
+                    <input type="checkbox" class="topicCb" data-chapter="${escapeAttr(ch.chapterName)}" data-topicid="${escapeAttr(t.id)}" />
+                    <span>${escapeHtml(t.name)}</span>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          `;
+          box.appendChild(row);
+        });
+
+        filterChapters();
+        updateWeightTotal();
+      }
+
+      function toggleChapter(chapterName, checked){
+        document.querySelectorAll(".chapterRow").forEach(r => {
+          if(r.dataset.chapter === chapterName){
+            const cb = r.querySelector(".chCb");
+            const pane = r.querySelector(".topicPane");
+
+            if (checked && cb) cb.checked = true;
+            if (pane) pane.classList.toggle("open", true);
+          }
+        });
+        updateWeightTotal();
+      }
+
+      function selectAllChapters(flag){
+        document.querySelectorAll(".chCb").forEach(cb => {
+          cb.checked = !!flag;
+          const row = cb.closest(".chapterRow");
+          const pane = row.querySelector(".topicPane");
+          if(pane) pane.classList.toggle("open", !!flag);
+        });
+        updateWeightTotal();
+      }
+
+      function selectAllTopics(chapterName, flag){
+        document.querySelectorAll(`.topicCb[data-chapter="${cssEscape(chapterName)}"]`).forEach(cb => {
+          cb.checked = !!flag;
+        });
+      }
+
+      function filterChapters(){
+        const q = ($("chapterSearch").value || "").trim().toLowerCase();
+        document.querySelectorAll(".chapterRow").forEach(r => {
+          const name = (r.dataset.chapter || "").toLowerCase();
+          r.style.display = (!q || name.includes(q)) ? "" : "none";
+        });
+      }
+
+      function collectChaptersConfig(){
+        const selected = [];
+        document.querySelectorAll(".chapterRow").forEach(r => {
+          const cb = r.querySelector(".chCb");
+          if(!cb || !cb.checked) return;
+
+          const chapterName = r.dataset.chapter;
+          const wEl = r.querySelector(".chWeight");
+          let w = Number((wEl && wEl.value) || 0);
+          if(!Number.isFinite(w)) w = 0;
+          w = Math.max(0, Math.min(100, Math.round(w)));
+
+          const topicIds = Array.from(document.querySelectorAll(`.topicCb:checked[data-chapter="${cssEscape(chapterName)}"]`))
+            .map(cb2 => cb2.dataset.topicid)
+            .filter(Boolean);
+
+          selected.push({ chapterName, weight: w, topicIds });
+        });
+        return selected;
+      }
+
+      function updateWeightTotal(){
+        let total = 0;
+        let selectedCount = 0;
+
+        document.querySelectorAll(".chapterRow").forEach(r => {
+          const cb = r.querySelector(".chCb");
+          const wEl = r.querySelector(".chWeight");
+          if(!cb || !cb.checked) return;
+          selectedCount++;
+          total += Number((wEl && wEl.value) || 0) || 0;
+        });
+
+        $("weightTotalPill").textContent = `Weight total: ${total} / 100`;
+        $("summaryPill1").textContent = `Chapters: ${selectedCount}`;
+        $("summaryPill2").textContent = `Weight: ${total} / 100`;
+        $("err_weights").style.display = (selectedCount > 0 && total !== 100) ? "block" : "none";
+
+        refreshRightSummary(selectedCount, total);
+        return total;
+      }
+
+      function refreshRightSummary(selectedCountArg, weightArg){
+        const selectedCount = typeof selectedCountArg === "number"
+          ? selectedCountArg
+          : document.querySelectorAll(".chCb:checked").length;
+
+        const weight = typeof weightArg === "number"
+          ? weightArg
+          : Array.from(document.querySelectorAll(".chapterRow")).reduce((sum, r) => {
+              const cb = r.querySelector(".chCb");
+              const wEl = r.querySelector(".chWeight");
+              return sum + ((cb && cb.checked) ? (Number((wEl && wEl.value) || 0) || 0) : 0);
+            }, 0);
+
+        $("statChapters").textContent = String(selectedCount);
+        $("statWeight").textContent = String(weight);
+      }
+
+      function validate(){
+        const paper = $("paperName").value.trim();
+        const sub = $("subject").value.trim();
+
+        setInvalid("paperName", !paper, "err_paperName");
+        setInvalid("subject", !sub, "err_subject");
+
+        const sources = getSelectedSourceSheets();
+        $("err_sources").style.display = sources.length ? "none" : "block";
+
+        const chaptersCfg = collectChaptersConfig();
+        $("err_chapters").style.display = chaptersCfg.length ? "none" : "block";
+
+        const weightTotal = updateWeightTotal();
+        const okWeights = (chaptersCfg.length === 0) ? true : (weightTotal === 100);
+
+        return !!paper && !!sub && sources.length && chaptersCfg.length && okWeights;
+      }
+
+      function getBaseRequest(){
+        syncTotal();
+
+        return {
+          paperName: $("paperName").value.trim(),
+          className: $("className").value.trim(),
+          subject: $("subject").value.trim(),
+
+          sourceSheets: getSelectedSourceSheets(),
+
+          easy: Number($("easy").value || 0),
+          medium: Number($("medium").value || 0),
+          hard: Number($("hard").value || 0),
+          totalQuestions: Number($("totalQuestions").value || 0),
+
+          uniqueOnly: $("uniqueOnly").checked,
+          shuffleOrder: $("shuffleOrder").checked,
+          includeHints: $("includeHints").checked,
+          includeVideoLinks: $("includeVideoLinks").checked,
+
+          excludeProjects: getSelectedProjects(),
+          questionTypeCounts: getQuestionTypeCounts(),
+
+          chaptersConfig: collectChaptersConfig(),
+
+          updateUsage: false
+        };
+      }
+
+      function buildPreview(){
+        if(!validate()){
+          setStatus("err", "Please fix highlighted fields before building preview.");
+          return;
+        }
+
+        const req = getBaseRequest();
+
+        setLoading("previewBtn", true);
+        setStatus("ok", `<span class="spinner"><span class="dot"></span>Preparing preview…</span>`);
+        $("generateBtn").disabled = true;
+
+        google.script.run
+          .withSuccessHandler(res => {
+            setLoading("previewBtn", false);
+
+            CURRENT_PREVIEW_BASE_REQ = req;
+            CURRENT_PREVIEW_ITEMS = (res.items || []).map(x => ({...x, selected: x.selected !== false}));
+            CURRENT_PREVIEW_NOTES = res.notes || [];
+            LAST_CANDIDATES = [];
+            REPLACE_TARGET_INDEX = null;
+
+            renderPreviewWrap();
+            openPreviewDrawer();
+            $("generateBtn").disabled = false;
+
+            setStatus("ok", `Preview ready. Review the questions in the side panel, then click <b>Generate Final PDF</b>.`);
+          })
+          .withFailureHandler(err => {
+            setLoading("previewBtn", false);
+            const msg = (err && err.message) ? err.message : String(err);
+            setStatus("err", `<b>Error</b><br/>${escapeHtml(msg)}`);
+          })
+          .previewPaper(req);
+      }
+
+      function renderPreviewWrap(){
+        renderPreviewSummary();
+        renderPreviewNotes();
+        renderPreviewList();
+        renderCandidateResults();
+        updateReplaceModePill();
+      }
+
+      function openPreviewDrawer(){
+        const overlay = $("overlay");
+        const drawer = $("previewDrawer");
+        if (!overlay || !drawer) return;
+
+        overlay.classList.add("open");
+        drawer.classList.add("open");
+
+        // Inline fallback in case the Apps Script webview ignores some CSS transitions.
+        overlay.style.opacity = "1";
+        overlay.style.pointerEvents = "auto";
+        drawer.style.transform = "translateX(0)";
+        drawer.style.visibility = "visible";
+      }
+
+      function closePreviewDrawer(){
+        const overlay = $("overlay");
+        const drawer = $("previewDrawer");
+        if (!overlay || !drawer) return;
+
+        overlay.classList.remove("open");
+        drawer.classList.remove("open");
+        overlay.style.opacity = "";
+        overlay.style.pointerEvents = "";
+        drawer.style.transform = "";
+        drawer.style.visibility = "";
+      }
+
+      function renderPreviewSummary(){
+        const included = CURRENT_PREVIEW_ITEMS.filter(x => x.selected !== false);
+        const easy = included.filter(x => Number(x.difficulty) === 1).length;
+        const medium = included.filter(x => Number(x.difficulty) === 2).length;
+        const hard = included.filter(x => Number(x.difficulty) === 3).length;
+
+        $("previewSummaryPill").textContent = `Included: ${included.length} / ${CURRENT_PREVIEW_ITEMS.length}`;
+        $("previewSummaryPill2").textContent = `Easy ${easy} • Medium ${medium} • Hard ${hard}`;
+      }
+
+      function renderPreviewNotes(){
+        if(!CURRENT_PREVIEW_NOTES.length){
+          $("previewNotes").innerHTML = `<span class="muted">No selection notes.</span>`;
+          return;
+        }
+        $("previewNotes").innerHTML = `<b>Notes</b><br/>• ${CURRENT_PREVIEW_NOTES.map(escapeHtml).join("<br/>• ")}`;
+      }
+
+      function renderPreviewList(){
+        const box = $("previewList");
+        box.innerHTML = "";
+
+        CURRENT_PREVIEW_ITEMS.forEach((item, idx) => {
+          const card = document.createElement("div");
+          card.className = "previewCard" + (item.selected === false ? " off" : "");
+
+          card.innerHTML = `
+            <div class="previewHead">
+              <div>
+                <div class="previewTitle">Q${idx + 1}${item.qid ? " • " + escapeHtml(item.qid) : ""}</div>
+                <div class="hint">${escapeHtml(item.chapter || "")}${item.topicName ? " • " + escapeHtml(item.topicName) : ""}${item.subtopic ? " • " + escapeHtml(item.subtopic) : ""}</div>
+              </div>
+
+              <label class="inline-label">
+                <input type="checkbox" ${item.selected !== false ? "checked" : ""} onchange="togglePreviewSelection(${idx}, this.checked)" />
+                Include
+              </label>
+            </div>
+
+            <div class="previewMeta">
+              <span class="badge">${escapeHtml(item.difficultyLabel || "")}</span>
+              <span class="badge">${escapeHtml(item.questionType || "Unknown type")}</span>
+              <span class="badge">Used: ${Number(item.used || 0)}</span>
+              <span class="badge">${escapeHtml(item.sourceSheet || "")}</span>
+            </div>
+
+            ${renderPreviewMedia(item)}
+
+            <div class="toolbar" style="margin-top:8px;">
+              <button type="button" class="ghost" onclick="movePreviewItem(${idx}, -1)" ${idx===0 ? "disabled" : ""}>Up</button>
+              <button type="button" class="ghost" onclick="movePreviewItem(${idx}, 1)" ${idx===CURRENT_PREVIEW_ITEMS.length-1 ? "disabled" : ""}>Down</button>
+              <button type="button" class="ghost" onclick="prepareReplace(${idx})">Replace Question</button>
+            </div>
+          `;
+          box.appendChild(card);
+        });
+      }
+
+      function togglePreviewSelection(index, checked){
+        if(!CURRENT_PREVIEW_ITEMS[index]) return;
+        CURRENT_PREVIEW_ITEMS[index].selected = !!checked;
+        renderPreviewSummary();
+        renderPreviewList();
+      }
+
+      function setAllPreviewSelection(flag){
+        CURRENT_PREVIEW_ITEMS = CURRENT_PREVIEW_ITEMS.map(x => ({...x, selected: !!flag}));
+        renderPreviewSummary();
+        renderPreviewList();
+      }
+
+      function movePreviewItem(index, dir){
+        const target = index + dir;
+        if(index < 0 || target < 0 || index >= CURRENT_PREVIEW_ITEMS.length || target >= CURRENT_PREVIEW_ITEMS.length) return;
+
+        const copy = CURRENT_PREVIEW_ITEMS.slice();
+        const tmp = copy[index];
+        copy[index] = copy[target];
+        copy[target] = tmp;
+        CURRENT_PREVIEW_ITEMS = copy;
+        renderPreviewList();
+      }
+
+      function prepareReplace(index){
+        if(!CURRENT_PREVIEW_ITEMS[index]) return;
+
+        REPLACE_TARGET_INDEX = index;
+        const it = CURRENT_PREVIEW_ITEMS[index];
+
+        $("searchChapter").value = it.chapter || "";
+        renderSearchTopicOptions();
+
+        $("searchDifficulty").value = String(it.difficulty || "");
+        $("searchQuestionType").value = it.questionType || "";
+
+        if ([...$("searchTopicId").options].some(o => o.value === String(it.topicId || ""))) {
+          $("searchTopicId").value = String(it.topicId || "");
+        } else {
+          $("searchTopicId").value = "";
+        }
+
+        $("searchContains").value = "";
+
+        updateReplaceModePill();
+
+        openPreviewDrawer();
+
+        const panel = $("replacePanel");
+        if (panel) {
+          panel.style.display = "block";
+          setTimeout(() => {
+            panel.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 80);
+        }
+
+        $("candidateStatus").textContent = "Searching replacement questions...";
+        $("candidateResults").innerHTML = "";
+        searchCandidates();
+      }
+
+      function clearReplaceMode(){
+        REPLACE_TARGET_INDEX = null;
+        updateReplaceModePill();
+        $("candidateStatus").textContent = "";
+      }
+
+      function updateReplaceModePill(){
+        if(REPLACE_TARGET_INDEX == null){
+          $("replaceModePill").textContent = "Mode: Add";
+          return;
+        }
+
+        const it = CURRENT_PREVIEW_ITEMS[REPLACE_TARGET_INDEX];
+        $("replaceModePill").textContent = `Mode: Replace Q${REPLACE_TARGET_INDEX + 1}${it && it.qid ? " • " + it.qid : ""}`;
+      }
+
+      function renderSearchChapterOptions(){
+        const sel = $("searchChapter");
+        const oldVal = sel.value;
+
+        sel.innerHTML = `<option value="">Any chapter</option>` + LOADED_CHAPTERS.map(ch =>
+          `<option value="${escapeAttr(ch.chapterName)}">${escapeHtml(ch.chapterName)}</option>`
+        ).join("");
+
+        if([...sel.options].some(o => o.value === oldVal)) sel.value = oldVal;
+        renderSearchTopicOptions();
+      }
+
+      function renderSearchTopicOptions(){
+        const chapter = $("searchChapter").value;
+        const sel = $("searchTopicId");
+        const oldVal = sel.value;
+        let topics = [];
+
+        if(chapter){
+          const hit = LOADED_CHAPTERS.find(x => x.chapterName === chapter);
+          topics = hit && Array.isArray(hit.topics) ? hit.topics : [];
+        }
+
+        sel.innerHTML = `<option value="">Any topic</option>` + topics.map(t =>
+          `<option value="${escapeAttr(t.id)}">${escapeHtml(t.name)}</option>`
+        ).join("");
+
+        if ([...sel.options].some(o => o.value === oldVal)) {
+          sel.value = oldVal;
+        }
+      }
+
+      function getCurrentPreviewKeys(){
+        return CURRENT_PREVIEW_ITEMS.map(x => x.itemKey);
+      }
+
+      function searchCandidates(){
+        if(!CURRENT_PREVIEW_BASE_REQ){
+          $("candidateStatus").textContent = "Build preview first.";
+          return;
+        }
+
+        $("candidateStatus").textContent = "Searching candidates…";
+        $("candidateResults").innerHTML = "";
+
+        google.script.run
+          .withSuccessHandler(res => {
+            LAST_CANDIDATES = Array.isArray(res.items) ? res.items.map(x => ({...x, selected:true})) : [];
+            $("candidateStatus").textContent = (res.notes && res.notes.length)
+              ? res.notes.join(" ")
+              : (LAST_CANDIDATES.length ? `${LAST_CANDIDATES.length} candidate(s) found.` : "No candidates found.");
+            renderCandidateResults();
+          })
+          .withFailureHandler(err => {
+            LAST_CANDIDATES = [];
+            renderCandidateResults();
+            $("candidateStatus").textContent = (err && err.message) ? err.message : String(err);
+          })
+          .searchQuestionsForPreview({
+            baseRequest: CURRENT_PREVIEW_BASE_REQ,
+            excludeKeys: getCurrentPreviewKeys(),
+            filters: {
+              chapter: $("searchChapter").value,
+              difficulty: $("searchDifficulty").value,
+              questionType: $("searchQuestionType").value,
+              topicId: $("searchTopicId").value,
+              containsText: $("searchContains").value,
+              limit: $("searchLimit").value
+            }
+          });
+      }
+
+      function renderCandidateResults(){
+        const box = $("candidateResults");
+        box.innerHTML = "";
+
+        LAST_CANDIDATES.forEach((item, idx) => {
+          const card = document.createElement("div");
+          card.className = "previewCard";
+
+          card.innerHTML = `
+            <div class="previewHead">
+              <div>
+                <div class="previewTitle">${item.qid ? escapeHtml(item.qid) : "Candidate"}</div>
+                <div class="hint">${escapeHtml(item.chapter || "")}${item.topicName ? " • " + escapeHtml(item.topicName) : ""}</div>
+              </div>
+            </div>
+
+            <div class="previewMeta">
+              <span class="badge">${escapeHtml(item.difficultyLabel || "")}</span>
+              <span class="badge">${escapeHtml(item.questionType || "Unknown type")}</span>
+              <span class="badge">Used: ${Number(item.used || 0)}</span>
+            </div>
+
+            ${renderPreviewMedia(item)}
+
+            <div class="toolbar" style="margin-top:8px;">
+              <button type="button" class="primary" onclick="useCandidate(${idx})">${REPLACE_TARGET_INDEX == null ? "Add" : "Use as Replacement"}</button>
+            </div>
+          `;
+          box.appendChild(card);
+        });
+      }
+
+      function useCandidate(index){
+        const cand = LAST_CANDIDATES[index];
+        if(!cand) return;
+
+        if(CURRENT_PREVIEW_ITEMS.some(x => x.itemKey === cand.itemKey)){
+          $("candidateStatus").textContent = "That question is already in the preview.";
+          return;
+        }
+
+        if(REPLACE_TARGET_INDEX == null){
+          CURRENT_PREVIEW_ITEMS.push({...cand, selected:true});
+        } else {
+          const oldSelected = CURRENT_PREVIEW_ITEMS[REPLACE_TARGET_INDEX]
+            ? (CURRENT_PREVIEW_ITEMS[REPLACE_TARGET_INDEX].selected !== false)
+            : true;
+
+          CURRENT_PREVIEW_ITEMS[REPLACE_TARGET_INDEX] = {...cand, selected: oldSelected};
+          REPLACE_TARGET_INDEX = null;
+          updateReplaceModePill();
+        }
+
+        renderPreviewWrap();
+      }
+
+      function stripPreviewItemForServer(item){
+        return {
+          chapter: item.chapter,
+          sourceSheet: item.sourceSheet,
+          difficulty: item.difficulty,
+          used: item.used,
+          projectUsed: item.projectUsed,
+          questionType: item.questionType,
+          topicId: item.topicId,
+
+          sourceDocId: item.sourceDocId,
+          answerKeyDocId: item.answerKeyDocId,
+          hintsDocId: item.hintsDocId,
+
+          questionFileId: item.questionFileId,
+          answerKeyFileId: item.answerKeyFileId,
+          hintsFileId: item.hintsFileId,
+
+          origQNo: item.origQNo,
+          metaKey: item.metaKey,
+          metaRowNum: item.metaRowNum
+        };
+      }
+
+      function generateFinalPdf(){
+        if(!CURRENT_PREVIEW_BASE_REQ){
+          setStatus("err", "Build preview first.");
+          return;
+        }
+
+        const finalItems = CURRENT_PREVIEW_ITEMS.filter(x => x.selected !== false);
+        if(!finalItems.length){
+          setStatus("err", "Select at least one question before generating final PDF.");
+          return;
+        }
+
+        const req = {
+          ...CURRENT_PREVIEW_BASE_REQ,
+          manualSelectedItems: finalItems.map(stripPreviewItemForServer),
+          updateUsage: false
+        };
+
+        setLoading("generateBtn", true);
+        setStatus("ok", `<span class="spinner"><span class="dot"></span>Generating final PDF…</span>`);
+
+        google.script.run
+          .withSuccessHandler(res => {
+            setLoading("generateBtn", false);
+
+            LAST_PLAN_FILE_ID = res.paper_plan_file_id || "";
+            LAST_OUTPUT_FOLDER_ID = res.output_folder_id || "";
+            LAST_REQ_SNAPSHOT = {
+              paperName: req.paperName,
+              className: req.className,
+              subject: req.subject,
+              chaptersConfig: req.chaptersConfig
+            };
+
+            let html = `<div style="font-weight:800; margin-bottom:8px;">Done</div><div>`;
+            if (res.question_paper_pdf_url) html += `📄 <b>Question Paper PDF</b>: <a href="${res.question_paper_pdf_url}" target="_blank" rel="noopener">Open</a><br/>`;
+            if (res.answer_hints_pdf_url) html += `✅ <b>Answer/Hints PDF</b>: <a href="${res.answer_hints_pdf_url}" target="_blank" rel="noopener">Open</a><br/>`;
+            if (res.tagging_sheet_url) html += `🧾 <b>Tagging Sheet</b>: <a href="${res.tagging_sheet_url}" target="_blank" rel="noopener">Open</a><br/>`;
+            if (res.paper_plan_json_url) html += `🧩 <b>paper_plan.json</b>: <a href="${res.paper_plan_json_url}" target="_blank" rel="noopener">Open</a><br/>`;
+            if (res.ppt_url) html += `📊 <b>PPT</b>: <a href="${res.ppt_url}" target="_blank" rel="noopener">Open</a><br/>`;
+            if (res.zip_url) html += `🗜️ <b>ZIP Bundle</b>: <a href="${res.zip_url}" target="_blank" rel="noopener">Open</a><br/>`;
+            html += `</div>`;
+
+            if (res.notes && res.notes.length){
+              html += `<div style="margin-top:10px;" class="muted"><b>Notes</b><br/>• ${res.notes.map(x => escapeHtml(x)).join("<br/>• ")}</div>`;
+            }
+
+            setStatus("ok", html);
+          })
+          .withFailureHandler(err => {
+            setLoading("generateBtn", false);
+            const msg = (err && err.message) ? err.message : String(err);
+            setStatus("err", `<b>Error</b><br/>${escapeHtml(msg)}`);
+          })
+          .generatePaper(req);
+      }
+
+      function createInfoTxt(){
+        const qidCsv = ($("dtpQids").value || "").trim();
+        if(!qidCsv){
+          $("infoOut").textContent = "Paste QIDs first.";
+          return;
+        }
+
+        if(!LAST_PLAN_FILE_ID || !LAST_REQ_SNAPSHOT){
+          $("infoOut").textContent = "Generate the final paper first.";
+          return;
+        }
+
+        $("infoOut").textContent = "Creating info.txt...";
+
+        google.script.run
+          .withSuccessHandler(res => {
+            $("infoOut").innerHTML = `✅ <a href="${res.url}" target="_blank" rel="noopener">${res.name}</a>`;
+          })
+          .withFailureHandler(err => {
+            $("infoOut").textContent = (err && err.message) ? err.message : String(err);
+          })
+          .createInfoTxtForDtp({
+            paperName: LAST_REQ_SNAPSHOT.paperName,
+            className: LAST_REQ_SNAPSHOT.className,
+            subject: LAST_REQ_SNAPSHOT.subject,
+            chaptersConfig: LAST_REQ_SNAPSHOT.chaptersConfig,
+            planFileId: LAST_PLAN_FILE_ID,
+            outputFolderId: LAST_OUTPUT_FOLDER_ID,
+            qidCsv: qidCsv
+          });
+      }
+
+      function applyTheme(theme){
+        document.body.setAttribute("data-theme", theme);
+        localStorage.setItem("faculty_theme", theme);
+        $("themeBtn").textContent = theme === "light" ? "☀️ Light" : "🌙 Dark";
+      }
+
+      function toggleTheme(){
+        const current = document.body.getAttribute("data-theme") || "dark";
+        applyTheme(current === "dark" ? "light" : "dark");
+      }
+
+      function initTheme(){
+        const saved = localStorage.getItem("faculty_theme") || "dark";
+        applyTheme(saved);
+      }
+
+      function resetForm(){
+        $("paperName").value = "";
+        $("subject").value = "";
+        $("chapterSearch").value = "";
+        $("dtpQids").value = "";
+        $("infoOut").textContent = "";
+
+        LAST_PLAN_FILE_ID = "";
+        LAST_OUTPUT_FOLDER_ID = "";
+        LAST_REQ_SNAPSHOT = null;
+
+        CURRENT_PREVIEW_BASE_REQ = null;
+        CURRENT_PREVIEW_ITEMS = [];
+        CURRENT_PREVIEW_NOTES = [];
+        LAST_CANDIDATES = [];
+        REPLACE_TARGET_INDEX = null;
+
+        closePreviewDrawer();
+        $("candidateResults").innerHTML = "";
+        $("candidateStatus").textContent = "";
+        $("generateBtn").disabled = true;
+
+        $("easy").value = DEFAULT_DIFFICULTY.easy;
+        $("medium").value = DEFAULT_DIFFICULTY.medium;
+        $("hard").value = DEFAULT_DIFFICULTY.hard;
+
+        document.querySelectorAll(".proj").forEach(cb => cb.checked = false);
+
+        typeAutoMode = true;
+        rebalanceTypesToTotal(DEFAULT_TOTAL);
+
+        $("uniqueOnly").checked = true;
+        $("shuffleOrder").checked = false;
+        $("includeHints").checked = true;
+        $("includeVideoLinks").checked = true;
+
+        LOADED_CHAPTERS = [];
+        $("chapterList").innerHTML = "";
+        $("topicsStatus").textContent = "Enter Class and Subject to load chapters.";
+        $("chaptersInfo").textContent = "Chapters: —";
+        $("err_chapters").style.display = "none";
+        $("err_weights").style.display = "none";
+        $("weightTotalPill").textContent = "Weight total: 0 / 100";
+        $("summaryPill1").textContent = "Chapters: —";
+        $("summaryPill2").textContent = "Weight: 0 / 100";
+        $("summaryPill3").textContent = "Total Q: 0";
+        $("statChapters").textContent = "0";
+        $("statWeight").textContent = "0";
+        $("statTotalQ").textContent = "0";
+
+        ["err_paperName","err_subject","err_sources"].forEach(id => {
+          const el = $(id);
+          if(el) el.style.display = "none";
+        });
+
+        $("status").classList.remove("ok","err");
+        $("status").style.display = "none";
+        $("status").innerHTML = "";
+
+        syncTotal();
+        loadSourceSheets();
+        renderSearchChapterOptions();
+      }
+
+      function initDefaults(){
+        $("easy").value = DEFAULT_DIFFICULTY.easy;
+        $("medium").value = DEFAULT_DIFFICULTY.medium;
+        $("hard").value = DEFAULT_DIFFICULTY.hard;
+        syncTotal();
+        typeAutoMode = true;
+        rebalanceTypesToTotal(DEFAULT_TOTAL);
+        updateTypeHint();
+      }
+
+      $("className").addEventListener("change", loadChapters);
+      $("subject").addEventListener("input", scheduleLoadChapters);
+      ["easy","medium","hard"].forEach(id => $(id).addEventListener("input", syncTotal));
+
+      document.addEventListener("input", (e) => {
+        if(e.target && e.target.classList && e.target.classList.contains("qtypeCount")){
+          onTypeManualEdit();
+        }
+      });
+
+      initTheme();
+      initDefaults();
+      switchTopTab("home");
+      switchBuilderMode("word");
+      $("topicsStatus").textContent = "Enter Class and Subject to load chapters.";
+      loadSourceSheets();
+      renderSearchChapterOptions();
+    </script>
+  </body>
+</html>
