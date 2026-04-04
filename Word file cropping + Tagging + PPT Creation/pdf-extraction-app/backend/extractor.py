@@ -15,6 +15,7 @@ def col_bounds(col):
 
 def _question_match(text):
     text = text.strip()
+    compact = re.sub(r"\s+", "", text)
     patterns = [
         re.compile(r"^(\d{1,3})\.(?:\s|\(|$)"),
         re.compile(r"^(\d{1,3})\)(?:\s|\(|$)"),
@@ -22,7 +23,7 @@ def _question_match(text):
         re.compile(r"^Q(?:ue)?\.?\s*(\d{1,3})(?:\s|\.|\)|$)", re.IGNORECASE),
     ]
     for pattern in patterns:
-        match = pattern.match(text)
+        match = pattern.match(text) or pattern.match(compact)
         if match:
             return int(match.group(1))
     return None
