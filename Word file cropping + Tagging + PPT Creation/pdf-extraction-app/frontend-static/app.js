@@ -20,6 +20,8 @@ const builderPanels = Array.from(document.querySelectorAll("[data-builder-panel]
 const uploadForm = document.getElementById("upload-form");
 const pdfFilesInput = document.getElementById("pdf-files");
 const pdfSelectionEl = document.getElementById("pdf-selection");
+const analyzeStatusEl = document.getElementById("analyze-status");
+const analyzeStatusTextEl = document.getElementById("analyze-status-text");
 const builderForm = document.getElementById("builder-form");
 const finalizeBtn = document.getElementById("finalize-btn");
 const openLibraryBtn = document.getElementById("open-library-btn");
@@ -170,9 +172,17 @@ function setBuilderEnabled(enabled) {
   submitBtn.disabled = !enabled;
 }
 
+function setAnalyzeStatus(message, stateName = "idle") {
+  if (!analyzeStatusEl) return;
+  analyzeStatusEl.dataset.state = stateName;
+  if (analyzeStatusTextEl) analyzeStatusTextEl.textContent = message;
+  else analyzeStatusEl.textContent = message;
+}
+
 function updateStatusText() {
   if (!state.analysisStatus) {
     downloadsEl.textContent = "Exports will appear here.";
+    if (!state.selectedPdfFiles.length) setAnalyzeStatus("Waiting for PDFs.", "idle");
     return;
   }
 
@@ -182,18 +192,22 @@ function updateStatusText() {
 
   if (status === "queued") {
     downloadsEl.textContent = `Extraction ready. Gemini tagging queued for ${total} questions.`;
+    setAnalyzeStatus(`Extraction complete. Gemini tagging queued for ${total} question(s).`, "working");
     return;
   }
   if (status === "running") {
     downloadsEl.textContent = `Tagging questions ${done}/${total}...`;
+    setAnalyzeStatus(`Analyzing PDFs and tagging questions ${done}/${total}...`, "working");
     return;
   }
   if (status === "completed") {
     downloadsEl.textContent = "Analysis ready.";
+    setAnalyzeStatus(`Analysis complete. ${total} question(s) are ready.`, "success");
     return;
   }
   if (status === "failed") {
     downloadsEl.textContent = `Analysis failed${state.analysisStatus.error ? `: ${state.analysisStatus.error}` : "."}`;
+    setAnalyzeStatus(`Analysis failed${state.analysisStatus.error ? `: ${state.analysisStatus.error}` : "."}`, "error");
     return;
   }
   downloadsEl.textContent = "Exports will appear here.";
@@ -367,6 +381,12 @@ function mergeSelectedPdfFiles(fileList) {
   state.selectedPdfFiles = Array.from(existing.values());
   syncPdfInputFiles();
   renderSelectedPdfFiles();
+  setAnalyzeStatus(
+    state.selectedPdfFiles.length
+      ? `${state.selectedPdfFiles.length} PDF(s) ready for analysis.`
+      : "Waiting for PDFs.",
+    "idle"
+  );
 }
 
 function openLibrary() {
@@ -419,6 +439,7 @@ uploadForm.addEventListener("submit", async (event) => {
     const formData = new FormData();
     state.selectedPdfFiles.forEach((file) => formData.append("files", file));
     formData.append("start_page", byId("start-page").value || "1");
+    setAnalyzeStatus(`Uploading and extracting ${state.selectedPdfFiles.length} PDF(s)...`, "working");
 
     const data = await postForm("/api/analyze-pdfs", formData);
     state.jobId = data.job_id;
@@ -443,6 +464,7 @@ uploadForm.addEventListener("submit", async (event) => {
       state.statusTimer = setInterval(pollJobStatus, 3000);
     }
   } catch (error) {
+    setAnalyzeStatus(error.message || "Analysis failed.", "error");
     alert(error.message);
   } finally {
     setBusy(submitBtn, false);
@@ -661,3 +683,4 @@ if (finalExternalLink) {
 setBuilderMode("pdf");
 setRoute("home");
 renderSelectedPdfFiles();
+setAnalyzeStatus("Waiting for PDFs.", "idle");

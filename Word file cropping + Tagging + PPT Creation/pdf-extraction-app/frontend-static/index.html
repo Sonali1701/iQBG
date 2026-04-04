@@ -10,10 +10,10 @@
   <div class="app-shell">
     <header class="topbar">
       <button class="brand brand-button" type="button" data-route="home">
-        <span class="brand-mark">IQ</span>
+        <span class="brand-mark">PF</span>
         <span class="brand-text">
           <strong>PaperFlow</strong>
-          <span class="brand-sub">Question paper studio</span>
+          <span class="brand-sub">Unified paper operations platform</span>
         </span>
       </button>
 
@@ -229,6 +229,10 @@
                     <input id="start-page" type="number" min="1" value="1">
                   </label>
                   <button class="primary" type="submit">Analyze PDFs</button>
+                  <div id="analyze-status" class="analyze-status" data-state="idle">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span id="analyze-status-text">Waiting for PDFs.</span>
+                  </div>
                 </form>
               </section>
 
