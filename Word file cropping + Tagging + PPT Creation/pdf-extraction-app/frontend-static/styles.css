@@ -561,6 +561,12 @@ h1 {
   gap: 5px;
 }
 
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .field span {
   font-size: 13px;
   font-weight: 700;
@@ -589,6 +595,52 @@ select:focus {
   outline: none;
   border-color: rgba(15, 93, 71, 0.35);
   box-shadow: 0 0 0 4px rgba(15, 93, 71, 0.12);
+}
+
+.file-selection {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.file-selection.empty {
+  color: var(--muted);
+}
+
+.file-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--panel-soft);
+  border: 1px solid rgba(23, 33, 30, 0.06);
+}
+
+.file-chip-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.file-chip-copy strong,
+.file-chip-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip-copy strong {
+  font-size: 13px;
+}
+
+.file-chip-copy span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .rule-grid {

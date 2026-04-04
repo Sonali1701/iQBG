@@ -3,6 +3,7 @@ const state = {
   projectName: "Generated Paper",
   allQuestions: [],
   selectedQuestions: [],
+  selectedPdfFiles: [],
   replacingId: null,
   sourceSummary: null,
   sourceDocuments: [],
@@ -17,6 +18,8 @@ const screens = Array.from(document.querySelectorAll("[data-screen]"));
 const builderModeButtons = Array.from(document.querySelectorAll("[data-builder-mode]"));
 const builderPanels = Array.from(document.querySelectorAll("[data-builder-panel]"));
 const uploadForm = document.getElementById("upload-form");
+const pdfFilesInput = document.getElementById("pdf-files");
+const pdfSelectionEl = document.getElementById("pdf-selection");
 const builderForm = document.getElementById("builder-form");
 const finalizeBtn = document.getElementById("finalize-btn");
 const openLibraryBtn = document.getElementById("open-library-btn");
@@ -319,6 +322,53 @@ function syncQuestionCollections() {
   renderBankQuestions();
 }
 
+function fileKey(file) {
+  return [file.name, file.size, file.lastModified].join("::");
+}
+
+function syncPdfInputFiles() {
+  if (!pdfFilesInput) return;
+  try {
+    const dataTransfer = new DataTransfer();
+    state.selectedPdfFiles.forEach((file) => dataTransfer.items.add(file));
+    pdfFilesInput.files = dataTransfer.files;
+  } catch (error) {
+    console.warn("Could not sync file input state.", error);
+  }
+}
+
+function renderSelectedPdfFiles() {
+  if (!pdfSelectionEl) return;
+  if (!state.selectedPdfFiles.length) {
+    pdfSelectionEl.className = "file-selection empty";
+    pdfSelectionEl.textContent = "No PDFs selected yet.";
+    return;
+  }
+
+  pdfSelectionEl.className = "file-selection";
+  pdfSelectionEl.innerHTML = state.selectedPdfFiles.map((file, index) => `
+    <div class="file-chip">
+      <div class="file-chip-copy">
+        <strong>${escapeHtml(file.name)}</strong>
+        <span>${(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+      </div>
+      <button class="ghost" type="button" data-action="remove-pdf" data-index="${index}">Remove</button>
+    </div>
+  `).join("");
+}
+
+function mergeSelectedPdfFiles(fileList) {
+  const existing = new Map(state.selectedPdfFiles.map((file) => [fileKey(file), file]));
+  Array.from(fileList || []).forEach((file) => {
+    if (file && file.name && file.name.toLowerCase().endsWith(".pdf")) {
+      existing.set(fileKey(file), file);
+    }
+  });
+  state.selectedPdfFiles = Array.from(existing.values());
+  syncPdfInputFiles();
+  renderSelectedPdfFiles();
+}
+
 function openLibrary() {
   libraryTitle.textContent = state.replacingId ? "Replace Question" : "Question Library";
   libraryModal.classList.remove("hidden");
@@ -362,13 +412,12 @@ uploadForm.addEventListener("submit", async (event) => {
   setBusy(submitBtn, true, "Analyzing...");
 
   try {
-    const files = byId("pdf-files").files;
-    if (!files.length) {
+    if (!state.selectedPdfFiles.length) {
       throw new Error("Please choose one or more PDFs.");
     }
 
     const formData = new FormData();
-    Array.from(files).forEach((file) => formData.append("files", file));
+    state.selectedPdfFiles.forEach((file) => formData.append("files", file));
     formData.append("start_page", byId("start-page").value || "1");
 
     const data = await postForm("/api/analyze-pdfs", formData);
@@ -379,9 +428,12 @@ uploadForm.addEventListener("submit", async (event) => {
     state.sourceSummary = data.summary || null;
     state.sourceDocuments = data.documents || [];
     state.analysisStatus = data.analysis_status || null;
+    state.selectedPdfFiles = [];
     librarySearch.value = "";
     libraryDifficulty.value = "";
     libraryType.value = "";
+    syncPdfInputFiles();
+    renderSelectedPdfFiles();
     renderSummary(state.sourceSummary, state.sourceDocuments);
     syncQuestionCollections();
     updateStatusText();
@@ -395,6 +447,23 @@ uploadForm.addEventListener("submit", async (event) => {
   } finally {
     setBusy(submitBtn, false);
   }
+});
+
+uploadForm?.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  if (target.id !== "pdf-files") return;
+  mergeSelectedPdfFiles(target.files);
+});
+
+pdfSelectionEl?.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button || button.dataset.action !== "remove-pdf") return;
+  const index = Number(button.dataset.index);
+  if (!Number.isInteger(index) || index < 0 || index >= state.selectedPdfFiles.length) return;
+  state.selectedPdfFiles.splice(index, 1);
+  syncPdfInputFiles();
+  renderSelectedPdfFiles();
 });
 
 builderForm.addEventListener("submit", async (event) => {
@@ -591,3 +660,4 @@ if (finalExternalLink) {
 }
 setBuilderMode("pdf");
 setRoute("home");
+renderSelectedPdfFiles();
